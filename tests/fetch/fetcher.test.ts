@@ -1,0 +1,68 @@
+import { describe, it, expect, vi } from 'vitest'
+import { Fetcher } from '../../src/fetch/fetcher.js'
+
+describe('Fetcher', () => {
+  it('sends a descriptive user agent', async () => {
+    const calls: RequestInit[] = []
+    const impl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init)
+      return new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, fetchImpl: impl as never })
+
+    await fetcher.text('https://example.com/a')
+
+    const headers = calls[0]!.headers as Record<string, string>
+    expect(headers['User-Agent']).toContain('cinema-tracker')
+  })
+
+  it('spaces requests to the same host by the minimum interval', async () => {
+    const times: number[] = []
+    const impl = vi.fn(async () => {
+      times.push(Date.now())
+      return new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 50, fetchImpl: impl as never })
+
+    await fetcher.text('https://example.com/a')
+    await fetcher.text('https://example.com/b')
+
+    expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(45)
+  })
+
+  it('does not delay requests to different hosts', async () => {
+    const times: number[] = []
+    const impl = vi.fn(async () => {
+      times.push(Date.now())
+      return new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 200, fetchImpl: impl as never })
+
+    await fetcher.text('https://one.example.com/a')
+    await fetcher.text('https://two.example.com/a')
+
+    expect(times[1]! - times[0]!).toBeLessThan(150)
+  })
+
+  it('retries a 503 and succeeds', async () => {
+    let n = 0
+    const impl = vi.fn(async () => {
+      n += 1
+      return n === 1
+        ? new Response('busy', { status: 503 })
+        : new Response('good', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, retryDelayMs: 1, fetchImpl: impl as never })
+
+    expect(await fetcher.text('https://example.com/a')).toBe('good')
+    expect(n).toBe(2)
+  })
+
+  it('throws on a persistent 404 without retrying', async () => {
+    const impl = vi.fn(async () => new Response('gone', { status: 404 }))
+    const fetcher = new Fetcher({ minIntervalMs: 0, retryDelayMs: 1, fetchImpl: impl as never })
+
+    await expect(fetcher.text('https://example.com/a')).rejects.toThrow('404')
+    expect(impl).toHaveBeenCalledTimes(1)
+  })
+})
