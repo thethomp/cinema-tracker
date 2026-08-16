@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'node:zlib'
 
@@ -27,9 +28,12 @@ export class Fetcher {
 
   constructor(options: FetcherOptions = {}) {
     this.minIntervalMs = options.minIntervalMs ?? 2000
-    this.maxRetries = options.maxRetries ?? 2
+    // Four retries — 2s/4s/8s/16s of backoff — so a rate-limit block at a
+    // venue (Cinemark in particular) has a realistic chance of clearing before
+    // the sweep gives up on the source.
+    this.maxRetries = options.maxRetries ?? 4
     this.retryDelayMs = options.retryDelayMs ?? 1000
-    this.fetchImpl = options.fetchImpl ?? httpsFetch
+    this.fetchImpl = options.fetchImpl ?? nodeFetch
   }
 
   async text(url: string): Promise<string> {
@@ -99,8 +103,12 @@ function retryDelayFor(response: Response, retryDelayMs: number, nextAttempt: nu
 
 const MAX_REDIRECTS = 5
 
+/** A hung connection must not stall a whole sweep. */
+const SOCKET_TIMEOUT_MS = 30_000
+
 /**
- * Default transport, backed by `node:https` rather than global `fetch`.
+ * Default transport, backed by `node:http`/`node:https` rather than global
+ * `fetch`.
  *
  * Some sites (cinemark.com among them) answer undici with a 403 no matter what
  * headers it sends — the block keys on the TLS/connection fingerprint, below
@@ -108,32 +116,38 @@ const MAX_REDIRECTS = 5
  * User-Agent, returns 200, so we identify ourselves honestly over a different
  * client stack rather than spoofing a browser.
  */
-const httpsFetch: typeof fetch = async (input, init = {}) => {
+const nodeFetch: typeof fetch = async (input, init = {}) => {
   const url = input instanceof Request ? input.url : input.toString()
   const headers = (init.headers ?? {}) as Record<string, string>
 
   let current = url
-  for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
-    const { status, location, body } = await httpsGet(current, headers)
+  for (let redirect = 0; redirect < MAX_REDIRECTS; redirect++) {
+    const { status, location, headers: responseHeaders, body } = await nodeGet(current, headers)
 
     if (status >= 300 && status < 400 && location) {
       current = new URL(location, current).toString()
       continue
     }
-    return new Response(new Uint8Array(body), { status })
+    // Headers have to be carried through: `Retry-After` is read off the
+    // Response by the retry logic above, and would be permanently absent if
+    // this constructed a bare Response.
+    return new Response(new Uint8Array(body), { status, headers: responseHeaders })
   }
   throw new Error(`GET ${url} exceeded ${MAX_REDIRECTS} redirects`)
 }
 
-interface RawHttpsResponse {
+interface RawHttpResponse {
   status: number
   location: string | undefined
+  headers: Headers
   body: Buffer
 }
 
-function httpsGet(url: string, headers: Record<string, string>): Promise<RawHttpsResponse> {
+function nodeGet(url: string, headers: Record<string, string>): Promise<RawHttpResponse> {
+  const send = new URL(url).protocol === 'http:' ? httpRequest : httpsRequest
+
   return new Promise((resolve, reject) => {
-    const request = httpsRequest(url, { method: 'GET', headers }, (response) => {
+    const request = send(url, { method: 'GET', headers }, (response) => {
       const chunks: Buffer[] = []
       response.on('data', (chunk: Buffer) => chunks.push(chunk))
       response.on('error', reject)
@@ -142,6 +156,7 @@ function httpsGet(url: string, headers: Record<string, string>): Promise<RawHttp
           resolve({
             status: response.statusCode ?? 0,
             location: response.headers.location,
+            headers: toHeaders(response.headers),
             // We never ask for a compressed body, but decode one anyway if a
             // server sends it unprompted.
             body: decompress(Buffer.concat(chunks), response.headers['content-encoding']),
@@ -151,9 +166,30 @@ function httpsGet(url: string, headers: Record<string, string>): Promise<RawHttp
         }
       })
     })
+    request.setTimeout(SOCKET_TIMEOUT_MS, () => {
+      request.destroy(new Error(`GET ${url} timed out after ${SOCKET_TIMEOUT_MS}ms`))
+    })
     request.on('error', reject)
     request.end()
   })
+}
+
+/**
+ * Node's header bag onto a `Headers`. Content-Encoding and Content-Length are
+ * dropped: the body handed to `Response` has already been decompressed, so
+ * announcing the original encoding or length would describe something else.
+ */
+function toHeaders(raw: NodeJS.Dict<string | string[]>): Headers {
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(raw)) {
+    if (value === undefined) continue
+    const lower = name.toLowerCase()
+    if (lower === 'content-encoding' || lower === 'content-length') continue
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      headers.append(name, entry)
+    }
+  }
+  return headers
 }
 
 function decompress(body: Buffer, encoding: string | undefined): Buffer {
