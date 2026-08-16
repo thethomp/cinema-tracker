@@ -82,7 +82,10 @@ export function parseSiffPage(html: string): SiffPage {
       startsAt,
       localDate: localDateOf(startsAt, TZ),
       venueId,
-      ticketUrl: `https://www.siff.net/cinema/in-theaters/${slugify(json.EventName)}`,
+      ticketUrl: ticketUrlFor(
+        $(element).closest('.item').find('h3 a[href]').first().attr('href'),
+        json.EventName,
+      ),
       sourceScreeningId: json.ShowtimeId,
       formatHints: extractFormatHints(json.EventName),
       runtimeMinutes: json.LengthInMinutes,
@@ -105,8 +108,25 @@ function extractFormatHints(title: string): string[] {
   return hints
 }
 
+/**
+ * The film page link lives in the same listing item as the screening button,
+ * so read it rather than rebuilding it: reconstruction gets the path wrong for
+ * anything SIFF files outside /cinema/in-theaters (community screenings, for
+ * one) and mangles transliterated titles. `slugify` stays only as a fallback
+ * for markup with no link at all.
+ */
+function ticketUrlFor(href: string | undefined, title: string): string {
+  return new URL(href ?? `/cinema/in-theaters/${slugify(title)}`, SIFF_BASE).toString()
+}
+
+const SIFF_BASE = 'https://www.siff.net'
+
 function slugify(title: string): string {
   return title
+    .normalize('NFD')
+    // SIFF transliterates rather than dropping: "Romería" is /romeria, not
+    // /romera. Strip the combining marks and keep the base letter.
+    .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9\s()-]/g, '')
     .trim()

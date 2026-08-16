@@ -34,8 +34,36 @@ describe('parseSiffScreenings', () => {
     }
   })
 
-  it('builds a ticket url pointing at the film page', () => {
-    expect(screenings[0]!.ticketUrl).toContain('siff.net')
+  it('takes the ticket url from the href in the listing, not a rebuilt slug', () => {
+    // The fixture's first entry links to /programs-and-events/..., which no
+    // amount of slugifying the title would produce.
+    expect(screenings[0]!.ticketUrl).toBe(
+      'https://www.siff.net/programs-and-events/community-screenings/little-shop-of-horrors',
+    )
+    const odyssey = screenings.find((s) => s.rawTitle === 'The Odyssey (70mm)')!
+    expect(odyssey.ticketUrl).toBe('https://www.siff.net/cinema/in-theaters/the-odyssey-(70mm)')
+  })
+
+  it('transliterates accents in the slug fallback', () => {
+    // SIFF's own slugs drop diacritics rather than the letters that carry
+    // them: "Romería" is /romeria, "Filipiñana" is /filipinana. Stripping the
+    // character outright ("romera") is a silent 404.
+    const noHref = (title: string, id: string) =>
+      `<html><body><div class="item"><div class="times"><a data-screening="${JSON.stringify(
+        {
+          EventName: title,
+          Showtime: '/Date(1786903200000)/',
+          ShowtimeId: id,
+          VenueName: 'SIFF Cinema Downtown',
+        },
+      ).replace(/"/g, '&quot;')}"></a></div></div></body></html>`
+
+    expect(parseSiffScreenings(noHref('Romería', 'r1'))[0]!.ticketUrl).toBe(
+      'https://www.siff.net/cinema/in-theaters/romeria',
+    )
+    expect(parseSiffScreenings(noHref('Filipiñana', 'f1'))[0]!.ticketUrl).toBe(
+      'https://www.siff.net/cinema/in-theaters/filipinana',
+    )
   })
 
   it('carries the runtime through when present', () => {
