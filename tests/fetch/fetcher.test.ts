@@ -65,4 +65,21 @@ describe('Fetcher', () => {
     await expect(fetcher.text('https://example.com/a')).rejects.toThrow('404')
     expect(impl).toHaveBeenCalledTimes(1)
   })
+
+  // The default transport is node:https-backed because undici is blocked by
+  // some venue sites. Exercising it for real would mean a network call, so we
+  // only assert the wiring: a no-option Fetcher is usable, and injection still
+  // wins over the default.
+  it('is usable with no options', () => {
+    const fetcher = new Fetcher()
+    expect(typeof fetcher.text).toBe('function')
+  })
+
+  it('prefers an injected fetch impl over the default transport', async () => {
+    const impl = vi.fn(async () => new Response('injected', { status: 200 }))
+    const fetcher = new Fetcher({ minIntervalMs: 0, fetchImpl: impl as never })
+
+    expect(await fetcher.text('https://example.com/a')).toBe('injected')
+    expect(impl).toHaveBeenCalledTimes(1)
+  })
 })
