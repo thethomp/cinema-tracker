@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { parseCinemarkScreenings, CINEMARK_VENUES } from '../../src/adapters/cinemark.js'
+import {
+  createCinemarkAdapter,
+  parseCinemarkScreenings,
+  CINEMARK_VENUES,
+} from '../../src/adapters/cinemark.js'
+import type { Fetcher } from '../../src/fetch/fetcher.js'
 
 const html = readFileSync('tests/fixtures/cinemark-lincoln-square.html', 'utf8')
 const venue = CINEMARK_VENUES.find((v) => v.id === 'cinemark-lincoln-square')!
@@ -8,14 +13,35 @@ const venue = CINEMARK_VENUES.find((v) => v.id === 'cinemark-lincoln-square')!
 describe('parseCinemarkScreenings', () => {
   const screenings = parseCinemarkScreenings(html, venue)
 
-  it('extracts screenings from the fixture', () => {
-    expect(screenings.length).toBeGreaterThan(10)
+  // Pinned exactly. A partial parsing regression that still returns "some"
+  // screenings is the failure mode a lower bound cannot see.
+  it('extracts every screening in the fixture', () => {
+    expect(screenings).toHaveLength(63)
+  })
+
+  it('pins one screening against the fixture end to end', () => {
+    const golden = screenings.find((s) => s.sourceScreeningId === '382984')!
+    expect(golden).toEqual({
+      rawTitle: 'The Odyssey',
+      // The href reads Showtime=2026-08-16T13:15:00, wall clock at the venue.
+      // Mid-August is PDT (UTC-7), so 13:15 local is 20:15Z — assert the
+      // instant, not its shape, or a broken conversion goes unnoticed.
+      startsAt: new Date('2026-08-16T20:15:00.000Z'),
+      localDate: '2026-08-16',
+      venueId: 'cinemark-lincoln-square',
+      ticketUrl:
+        'https://www.cinemark.com/TicketSeatMap/?TheaterId=1118&ShowtimeId=382984' +
+        '&CinemarkMovieId=108919&Showtime=2026-08-16T13:15:00',
+      sourceScreeningId: '382984',
+      formatHints: ['IMAX 2D'],
+      runtimeMinutes: 172,
+    })
   })
 
   it('reads the start time from the href, not the link text', () => {
     const first = screenings[0]!
-    expect(first.startsAt.toISOString()).toMatch(/^2026-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/)
-    expect(first.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(first.startsAt.toISOString()).toBe('2026-08-16T18:50:00.000Z')
+    expect(first.localDate).toBe('2026-08-16')
   })
 
   it('uses the Cinemark ShowtimeId as the source id', () => {
@@ -81,5 +107,36 @@ describe('parseCinemarkScreenings', () => {
   it('produces unique source screening ids', () => {
     const ids = screenings.map((s) => s.sourceScreeningId)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('createCinemarkAdapter', () => {
+  function stubFetcher() {
+    const urls: string[] = []
+    const fetcher = {
+      // Every date gets the same page — exactly what Cinemark does when a date
+      // has no published schedule yet, and what its redirect used to do when
+      // it dropped the query string.
+      text: async (url: string) => {
+        urls.push(url)
+        return html
+      },
+    } as unknown as Fetcher
+    return { fetcher, urls }
+  }
+
+  it('keeps at most one date worth of screenings when every request serves the same page', async () => {
+    const { fetcher, urls } = stubFetcher()
+    const adapter = createCinemarkAdapter(fetcher)
+
+    const inRange = await adapter.fetch(venue, { from: '2026-08-16', to: '2026-08-18' })
+    expect(urls).toHaveLength(3)
+    expect(inRange).toHaveLength(63)
+    expect([...new Set(inRange.map((s) => s.localDate))]).toEqual(['2026-08-16'])
+
+    // The fixture is 2026-08-16's page. Asked for later dates and handed it
+    // anyway, the adapter must contribute nothing rather than restate today
+    // under three different dates.
+    expect(await adapter.fetch(venue, { from: '2026-08-17', to: '2026-08-19' })).toEqual([])
   })
 })

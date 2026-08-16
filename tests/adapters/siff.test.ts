@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   createSiffAdapter,
@@ -14,17 +14,33 @@ const html = readFileSync('tests/fixtures/siff-cinema.html', 'utf8')
 describe('parseSiffScreenings', () => {
   const screenings = parseSiffScreenings(html)
 
-  it('extracts screenings from the fixture', () => {
-    expect(screenings.length).toBeGreaterThan(0)
+  // Pinned exactly: a partial parsing regression still returns "some"
+  // screenings, which a lower bound cannot detect.
+  it('extracts every screening in the fixture', () => {
+    expect(screenings).toHaveLength(12)
+  })
+
+  it('pins one screening against the fixture end to end', () => {
+    const golden = screenings.find((s) => s.sourceScreeningId === 'S7YThHh32o')!
+    expect(golden).toEqual({
+      rawTitle: 'The Odyssey (70mm)',
+      // /Date(1786914000000)/ — assert the instant, not its shape.
+      startsAt: new Date('2026-08-16T21:00:00.000Z'),
+      localDate: '2026-08-16',
+      venueId: 'siff-downtown',
+      ticketUrl: 'https://www.siff.net/cinema/in-theaters/the-odyssey-(70mm)',
+      sourceScreeningId: 'S7YThHh32o',
+      formatHints: ['70MM'],
+      runtimeMinutes: 172,
+    })
   })
 
   it('maps the embedded JSON onto RawScreening fields', () => {
     const first = screenings[0]!
-    expect(first.rawTitle).toBeTruthy()
-    expect(first.sourceScreeningId).toMatch(/^\w+$/)
-    expect(first.startsAt).toBeInstanceOf(Date)
-    expect(Number.isNaN(first.startsAt.getTime())).toBe(false)
-    expect(first.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(first.rawTitle).toBe('Little Shop of Horrors')
+    expect(first.sourceScreeningId).toBe('XytmHWNpuq')
+    expect(first.startsAt.toISOString()).toBe('2026-08-16T18:00:00.000Z')
+    expect(first.localDate).toBe('2026-08-16')
   })
 
   it('resolves the auditorium name to a known venue id', () => {
@@ -153,6 +169,30 @@ describe('createSiffAdapter', () => {
       'https://www.siff.net/cinema?day=1',
       'https://www.siff.net/cinema?day=2',
     ])
+  })
+
+  it('keeps at most one date worth of screenings when every day serves the same page', async () => {
+    // SIFF pages by offset from today, so pin today to the day the fixture was
+    // recorded; the stub then answers every offset with that same page, which
+    // is exactly the today-fallback SIFF serves past day=6.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-16T12:00:00Z'))
+    try {
+      const { fetcher, urls } = stubFetcher()
+      const adapter = createSiffAdapter(fetcher)
+      const downtown = SIFF_VENUES.find((v) => v.id === 'siff-downtown')!
+
+      const inRange = await adapter.fetch(downtown, { from: '2026-08-16', to: '2026-08-18' })
+      expect(urls).toHaveLength(3)
+      // The fixture's three SIFF Downtown screenings, once — not once per day.
+      expect(inRange).toHaveLength(3)
+      expect([...new Set(inRange.map((s) => s.localDate))]).toEqual(['2026-08-16'])
+
+      // And a window that excludes the page's own date keeps nothing at all.
+      expect(await adapter.fetch(downtown, { from: '2026-08-17', to: '2026-08-19' })).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('skips dates outside the week SIFF actually serves', async () => {
