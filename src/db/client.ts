@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
 import type { ExtractTablesWithRelations } from 'drizzle-orm'
 import {
@@ -59,6 +61,10 @@ export type Tx = BetterSQLiteTransaction<typeof schema, ExtractTablesWithRelatio
 export type DbLike = Db | Tx
 
 export function createDatabase(path: string): { db: Db; close: () => void } {
+  // better-sqlite3 will not create a missing directory, and `data/` is
+  // gitignored — without this, `npm run sweep` fails on a fresh clone.
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
+
   const sqlite = new Database(path)
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')

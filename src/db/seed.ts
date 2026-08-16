@@ -22,7 +22,15 @@ export async function seedVenues(db: Db, refs: VenueRef[]): Promise<void> {
       })
       .onConflictDoUpdate({
         target: venues.id,
-        set: { name: ref.name, chain: ref.chain, sourceVenueId: ref.sourceVenueId },
+        // timezone and weight included: without them, changing a venue's chain
+        // (and so its weight) or timezone silently did nothing on re-seed.
+        set: {
+          name: ref.name,
+          chain: ref.chain,
+          timezone: ref.timezone,
+          sourceVenueId: ref.sourceVenueId,
+          weight: WEIGHTED_CHAINS[ref.chain] ?? 0,
+        },
       })
   }
 }

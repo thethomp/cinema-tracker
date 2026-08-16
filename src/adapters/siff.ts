@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio'
 import type { DateRange, RawScreening, VenueAdapter, VenueRef } from '../core/types.js'
-import { localDateOf } from '../core/time.js'
+import { dayOffset, enumerateDates, localDateOf } from '../core/time.js'
 import type { Fetcher } from '../fetch/fetcher.js'
 
 const TZ = 'America/Los_Angeles'
@@ -141,12 +141,6 @@ function slugify(title: string): string {
  */
 const MAX_DAY_OFFSET = 6
 
-/** Whole days from `today` to `date`, both "YYYY-MM-DD". */
-function dayOffset(date: string, today: string): number {
-  const ms = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)
-  return Math.round(ms / 86_400_000)
-}
-
 export function createSiffAdapter(fetcher: Fetcher): VenueAdapter {
   return {
     id: 'siff',
@@ -172,15 +166,4 @@ export function createSiffAdapter(fetcher: Fetcher): VenueAdapter {
       return all
     },
   }
-}
-
-export function enumerateDates(range: DateRange): string[] {
-  const dates: string[] = []
-  const cursor = new Date(`${range.from}T00:00:00Z`)
-  const end = new Date(`${range.to}T00:00:00Z`)
-  while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10))
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
-  return dates
 }

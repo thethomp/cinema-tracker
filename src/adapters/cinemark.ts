@@ -1,8 +1,7 @@
 import * as cheerio from 'cheerio'
 import type { DateRange, RawScreening, VenueAdapter, VenueRef } from '../core/types.js'
-import { localDateOf, localWallClockToUtc } from '../core/time.js'
+import { enumerateDates, localDateOf, localWallClockToUtc } from '../core/time.js'
 import type { Fetcher } from '../fetch/fetcher.js'
-import { enumerateDates } from './siff.js'
 
 const TZ = 'America/Los_Angeles'
 const BASE = 'https://www.cinemark.com'
