@@ -1,5 +1,10 @@
 import Database from 'better-sqlite3'
-import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import type { ExtractTablesWithRelations } from 'drizzle-orm'
+import {
+  drizzle,
+  type BetterSQLite3Database,
+  type BetterSQLiteTransaction,
+} from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema.js'
 
 const CREATE_STATEMENTS = [
@@ -42,6 +47,16 @@ const CREATE_STATEMENTS = [
 ]
 
 export type Db = BetterSQLite3Database<typeof schema>
+
+/** A transaction handle on `Db`. */
+export type Tx = BetterSQLiteTransaction<typeof schema, ExtractTablesWithRelations<typeof schema>>
+
+/**
+ * A database handle or a transaction on one. better-sqlite3 transactions are
+ * synchronous, so store functions that must be able to run inside one take
+ * this rather than `Db`.
+ */
+export type DbLike = Db | Tx
 
 export function createDatabase(path: string): { db: Db; close: () => void } {
   const sqlite = new Database(path)

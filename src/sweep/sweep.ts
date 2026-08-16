@@ -40,9 +40,14 @@ export async function runSweep(
       let itemCount = 0
       for (const venue of adapter.venues) {
         const forVenue = byVenue.get(venue.id) ?? []
-        const result = await upsertScreenings(db, forVenue, now)
-        itemCount += result.inserted + result.updated
-        await markMissing(db, venue.id, forVenue.map((s) => s.sourceScreeningId))
+        // One transaction per venue: a crash between the upsert and the miss
+        // pass would otherwise leave the venue half-updated, with rows counted
+        // missing that the sweep did in fact see.
+        itemCount += db.transaction((tx) => {
+          const result = upsertScreenings(tx, forVenue, now)
+          markMissing(tx, venue.id, forVenue.map((s) => s.sourceScreeningId), range)
+          return result.inserted + result.updated
+        })
       }
 
       await recordRun(db, {
