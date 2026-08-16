@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { createSiffAdapter, parseSiffScreenings, SIFF_VENUES } from '../../src/adapters/siff.js'
+import {
+  createSiffAdapter,
+  parseSiffPage,
+  parseSiffScreenings,
+  SIFF_VENUES,
+} from '../../src/adapters/siff.js'
 import type { Fetcher } from '../../src/fetch/fetcher.js'
 import { localDateOf } from '../../src/core/time.js'
 
@@ -41,6 +46,56 @@ describe('parseSiffScreenings', () => {
   it('produces unique source screening ids', () => {
     const ids = screenings.map((s) => s.sourceScreeningId)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+/** A minimal stand-in for SIFF's listing markup. */
+function page(...entries: Array<Record<string, unknown>>): string {
+  const items = entries
+    .map((json, i) => {
+      const attr = JSON.stringify(json).replace(/"/g, '&quot;')
+      return `<div class="item">
+        <h3><a href="/cinema/in-theaters/film-${i}">Film ${i}</a></h3>
+        <div class="times"><div class="button-group">
+          <a class="elevent button on" data-screening="${attr}">7:00 PM</a>
+        </div></div>
+      </div>`
+    })
+    .join('')
+  return `<html><body><div class="listing thumbs">${items}</div></body></html>`
+}
+
+describe('parseSiffPage', () => {
+  it('reports auditoriums it could not match instead of dropping them silently', () => {
+    const html = page(
+      {
+        EventName: 'Known Film',
+        Showtime: '/Date(1786903200000)/',
+        ShowtimeId: 'known1',
+        VenueName: 'SIFF Cinema Downtown',
+      },
+      {
+        EventName: 'Orphan Film',
+        Showtime: '/Date(1786903200000)/',
+        ShowtimeId: 'orphan1',
+        VenueName: 'SIFF Cinema Egyptian',
+      },
+      {
+        EventName: 'Orphan Film',
+        Showtime: '/Date(1786910000000)/',
+        ShowtimeId: 'orphan2',
+        VenueName: 'SIFF Cinema Egyptian',
+      },
+    )
+
+    const { screenings, unrecognizedVenues } = parseSiffPage(html)
+
+    expect(screenings.map((s) => s.sourceScreeningId)).toEqual(['known1'])
+    expect(unrecognizedVenues).toEqual({ 'SIFF Cinema Egyptian': 2 })
+  })
+
+  it('recognizes every auditorium in the recorded fixture', () => {
+    expect(parseSiffPage(html).unrecognizedVenues).toEqual({})
   })
 })
 

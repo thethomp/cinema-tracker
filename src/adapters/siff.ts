@@ -9,7 +9,6 @@ export const SIFF_VENUES: VenueRef[] = [
   { id: 'siff-downtown', name: 'SIFF Cinema Downtown', chain: 'SIFF', timezone: TZ, sourceVenueId: 'siff-cinema-downtown' },
   { id: 'siff-uptown', name: 'SIFF Cinema Uptown', chain: 'SIFF', timezone: TZ, sourceVenueId: 'siff-cinema-uptown' },
   { id: 'siff-film-center', name: 'SIFF Film Center', chain: 'SIFF', timezone: TZ, sourceVenueId: 'siff-film-center' },
-  { id: 'siff-egyptian', name: 'SIFF Cinema Egyptian', chain: 'SIFF', timezone: TZ, sourceVenueId: 'siff-cinema-egyptian' },
 ]
 
 interface SiffScreeningJson {
@@ -37,9 +36,25 @@ function resolveVenueId(auditorium: string): string | undefined {
   return sorted.find((v) => auditorium.startsWith(v.name))?.id
 }
 
+export interface SiffPage {
+  screenings: RawScreening[]
+  /**
+   * `VenueName` values that matched no known venue, and how many screenings
+   * each swallowed. Dropping these silently is how a stale venue list — or a
+   * renamed auditorium — goes unnoticed, so the count is surfaced rather than
+   * discarded.
+   */
+  unrecognizedVenues: Record<string, number>
+}
+
 export function parseSiffScreenings(html: string): RawScreening[] {
+  return parseSiffPage(html).screenings
+}
+
+export function parseSiffPage(html: string): SiffPage {
   const $ = cheerio.load(html)
   const results: RawScreening[] = []
+  const unrecognizedVenues: Record<string, number> = {}
   const seen = new Set<string>()
 
   $('[data-screening]').each((_, element) => {
@@ -54,7 +69,10 @@ export function parseSiffScreenings(html: string): RawScreening[] {
     }
 
     const venueId = resolveVenueId(json.VenueName)
-    if (!venueId) return
+    if (!venueId) {
+      unrecognizedVenues[json.VenueName] = (unrecognizedVenues[json.VenueName] ?? 0) + 1
+      return
+    }
     if (seen.has(json.ShowtimeId)) return
     seen.add(json.ShowtimeId)
 
@@ -71,7 +89,7 @@ export function parseSiffScreenings(html: string): RawScreening[] {
     })
   })
 
-  return results
+  return { screenings: results, unrecognizedVenues }
 }
 
 /** SIFF encodes format in the title, e.g. "The Odyssey (70mm)". */
@@ -120,13 +138,15 @@ export function createSiffAdapter(fetcher: Fetcher): VenueAdapter {
         const offset = dayOffset(date, today)
         if (offset < 0 || offset > MAX_DAY_OFFSET) continue
         const html = await fetcher.text(`https://www.siff.net/cinema?day=${offset}`)
+        const { screenings, unrecognizedVenues } = parseSiffPage(html)
+        for (const [name, count] of Object.entries(unrecognizedVenues)) {
+          console.warn(`siff: ${count} screening(s) at unrecognized auditorium "${name}"`)
+        }
         // Filter on localDate as well: if SIFF ever serves the today-fallback
         // for a day we asked for, its screenings are dropped rather than
         // duplicated across every date in the range.
         all.push(
-          ...parseSiffScreenings(html).filter(
-            (s) => s.venueId === venue.id && s.localDate === date,
-          ),
+          ...screenings.filter((s) => s.venueId === venue.id && s.localDate === date),
         )
       }
       return all

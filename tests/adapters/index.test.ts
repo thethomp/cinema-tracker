@@ -13,9 +13,19 @@ describe('createAdapters', () => {
     ])
   })
 
-  it('exposes every venue with a unique id', () => {
+  // Pinned exactly, not as a lower bound: a venue added by mistake (as SIFF's
+  // Egyptian was, after SIFF gave up that lease) should fail loudly here.
+  it('exposes exactly the v1 venues, each with a unique id', () => {
     const ids = allVenues(adapters).map((v) => v.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.length).toBeGreaterThanOrEqual(7)
+    expect(ids.length).toBe(6)
+    expect([...ids].sort()).toEqual([
+      'cinemark-lincoln-square',
+      'cinemark-totem-lake',
+      'seattle-magic',
+      'siff-downtown',
+      'siff-film-center',
+      'siff-uptown',
+    ])
   })
 })
