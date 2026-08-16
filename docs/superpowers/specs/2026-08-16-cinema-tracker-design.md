@@ -94,6 +94,27 @@ The Lincoln Square page carried 195 showtimes. `data-ajax` attributes indicate
 endpoints for paging to other dates. One `application/ld+json` block provides
 venue identity but not showtimes.
 
+**SIFF publishes only a 7-day window.** Confirmed 2026-08-16 during implementation.
+The cinema page pages by day *offset*, not absolute date: `/cinema?day=0` through
+`/cinema?day=6`. An absolute `?date=YYYY-MM-DD` parameter is ignored, and offsets
+of 7 or greater silently return **today's** listings rather than erroring. A naive
+21-day sweep therefore yields 21 copies of today. The SIFF adapter requests
+offsets 0–6 only and additionally filters parsed results by local date, so any
+future today-fallback contributes nothing instead of duplicating.
+
+The 21-day fetch window in "Scheduler and politeness" applies to Cinemark and AMC.
+SIFF's effective horizon is 7 days.
+
+**Cinemark rejects Node's `fetch`, not our user agent.** Confirmed 2026-08-16.
+`api`-style probes established that `undici` (Node's built-in `fetch`) receives a
+403 from cinemark.com regardless of headers — including with a full browser header
+set and with no headers at all — while `curl` and Node's built-in `node:https`
+module both receive 200 using the project's own self-identifying user agent. The
+block is a TLS/connection fingerprint below the HTTP layer, not a judgment about
+how we identify ourselves. The fetch layer therefore uses `node:https` as its
+default transport and keeps the descriptive user agent unchanged. No user-agent
+spoofing is required or used.
+
 **SIFF** — Server-rendered via the Ingeniux CMS. Showtimes appear in page HTML.
 Individual film pages live at `/cinema/in-theaters/<slug>`, and a `/calendar` view
 exists. Slugs themselves carry special-event signal: observed examples include
