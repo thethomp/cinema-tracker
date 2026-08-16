@@ -82,4 +82,42 @@ describe('Fetcher', () => {
     expect(await fetcher.text('https://example.com/a')).toBe('injected')
     expect(impl).toHaveBeenCalledTimes(1)
   })
+
+  it('honors a numeric Retry-After header on a 429', async () => {
+    let n = 0
+    const impl = vi.fn(async () => {
+      n += 1
+      return n === 1
+        ? new Response('slow', { status: 429, headers: { 'Retry-After': '1' } })
+        : new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, retryDelayMs: 1, fetchImpl: impl as never })
+
+    const start = Date.now()
+    const result = await fetcher.text('https://example.com/a')
+    const elapsed = Date.now() - start
+
+    expect(result).toBe('ok')
+    expect(elapsed).toBeGreaterThanOrEqual(950)
+    expect(n).toBe(2)
+  })
+
+  it('falls back to exponential backoff when Retry-After is not numeric', async () => {
+    let n = 0
+    const impl = vi.fn(async () => {
+      n += 1
+      return n === 1
+        ? new Response('slow', {
+            status: 429,
+            headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' },
+          })
+        : new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, retryDelayMs: 5, fetchImpl: impl as never })
+
+    const result = await fetcher.text('https://example.com/a')
+
+    expect(result).toBe('ok')
+    expect(n).toBe(2)
+  })
 })

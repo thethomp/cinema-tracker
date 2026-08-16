@@ -15,6 +15,9 @@ export interface FetcherOptions {
 /** Status codes worth retrying — transient server and rate-limit responses. */
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504])
 
+/** Ceiling on an honored `Retry-After` wait, so a hostile value can't hang a sweep. */
+const MAX_RETRY_AFTER_MS = 60_000
+
 export class Fetcher {
   private readonly minIntervalMs: number
   private readonly maxRetries: number
@@ -39,8 +42,9 @@ export class Fetcher {
     await this.waitForSlot(host)
 
     let lastError: Error | undefined
+    let nextDelayMs = 0
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      if (attempt > 0) await sleep(this.retryDelayMs * attempt)
+      if (attempt > 0) await sleep(nextDelayMs)
 
       this.lastRequestAt.set(host, Date.now())
       const response = await this.fetchImpl(url, {
@@ -57,6 +61,7 @@ export class Fetcher {
         throw new Error(`GET ${url} failed: ${response.status}`)
       }
       lastError = new Error(`GET ${url} failed: ${response.status}`)
+      nextDelayMs = retryDelayFor(response, this.retryDelayMs, attempt + 1)
     }
     throw lastError ?? new Error(`GET ${url} failed`)
   }
@@ -73,6 +78,23 @@ export class Fetcher {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Delay before the next retry: honor a numeric `Retry-After` (seconds) when
+ * the response carries one, capped at `MAX_RETRY_AFTER_MS`; otherwise fall
+ * back to exponential backoff. The HTTP-date form of `Retry-After` is
+ * ignored — if it doesn't parse as a plain number, we skip it.
+ */
+function retryDelayFor(response: Response, retryDelayMs: number, nextAttempt: number): number {
+  const header = response.headers.get('Retry-After')
+  if (header !== null) {
+    const seconds = Number(header)
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
+    }
+  }
+  return retryDelayMs * 2 ** nextAttempt
 }
 
 const MAX_REDIRECTS = 5
