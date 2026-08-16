@@ -94,6 +94,14 @@ The Lincoln Square page carried 195 showtimes. `data-ajax` attributes indicate
 endpoints for paging to other dates. One `application/ld+json` block provides
 venue identity but not showtimes.
 
+**SIFF operates three cinemas, not four.** During implementation a `siff-egyptian`
+venue was added in error and produced a permanently empty venue. SIFF ended its
+lease to operate the Egyptian Theatre in October 2025. Verified 2026-08-16:
+`siff.net/cinema/cinema-venues` lists only Downtown, Uptown, and Film Center, and
+"Egyptian" appears zero times in the recorded cinema listings. The adapter now
+carries three SIFF venues and counts unrecognized auditorium names rather than
+discarding them silently, so a future venue change surfaces instead of hiding.
+
 **SIFF publishes only a 7-day window.** Confirmed 2026-08-16 during implementation.
 The cinema page pages by day *offset*, not absolute date: `/cinema?day=0` through
 `/cinema?day=6`. An absolute `?date=YYYY-MM-DD` parameter is ignored, and offsets
