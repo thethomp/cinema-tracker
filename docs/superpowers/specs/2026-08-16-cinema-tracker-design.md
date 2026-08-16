@@ -59,7 +59,10 @@ adapter designs and should be re-verified if implementation starts much later.
 structured JSON error, `"The request requires vendor authentication"`, confirming
 a working versioned REST API behind a vendor key. The developer portal at
 `developers.amctheatres.com` is Cloudflare-protected and must be accessed from a
-normal browser. The user is requesting a key.
+normal browser. A vendor key was issued to the user on 2026-08-16. The portal
+noted that changes deploy to production on Thursdays, so the key may be valid
+against staging before it is valid in production — this has not yet been tested
+and should be confirmed before the AMC adapter is built.
 
 **Cinemark** — Theatre pages are fully server-rendered with no JavaScript
 framework. Showtime data is present in the delivered HTML with structured
@@ -301,9 +304,11 @@ Failures surface in the health view and are visible from the main UI.
 
 ## Risks
 
-**AMC vendor key.** The largest unknown. If AMC declines individual developers,
-AMC degrades to an HTML adapter like the others, or drops from v1. Nothing else
-depends on it, so it should be applied for early and built last.
+**AMC vendor key.** Largely resolved — a key was issued on 2026-08-16. The
+remaining question is whether it is live in production immediately or only after
+AMC's next Thursday deploy. A single authenticated request settles it. If the key
+turns out to be staging-only or scoped away from catalog endpoints, AMC degrades
+to an HTML adapter like the others. Nothing else depends on it.
 
 **Scraper breakage.** Certain over time, not hypothetical. Mitigated by fixture
 tests plus the health view — the goal is fast, loud detection rather than
@@ -340,11 +345,25 @@ Recorded now, deliberately out of v1 scope:
 - **LLM tag extraction**, replacing rules behind the existing interface. Expected
   to substantially outperform rules on unstructured descriptions.
 - **Letterboxd integration.** Ratings and watchlist as the primary taste signal,
-  likely retiring most hand-written rules. Path: CSV export (a reliable
-  first-party feature) for the initial import, then per-user RSS for incremental
-  sync. The official API is approval-gated and should not be planned around. The
-  RSS endpoint pattern was not verified during design and must be confirmed
-  against the user's real account before implementation.
+  likely retiring most hand-written rules. Account: `TheThomp`. Verified by direct
+  probe on 2026-08-16:
+
+  - `letterboxd.com/thethomp/rss/` returns `application/rss+xml` with the 50 most
+    recent diary entries. Each item carries `tmdb:movieId`,
+    `letterboxd:memberRating`, `letterboxd:watchedDate`, `letterboxd:rewatch`,
+    `letterboxd:memberLike`, `filmTitle`, and `filmYear`. **The presence of TMDB
+    IDs means rated films need no title resolution at all** — they arrive keyed to
+    the same identifier the rest of the system uses.
+  - `letterboxd.com/thethomp/watchlist/` returns paginated HTML (at least 8 pages)
+    exposing films via `data-item-slug`, `data-item-link`, and `/film/<slug>/`
+    links. No TMDB IDs here, so watchlist entries need slug or title+year
+    resolution.
+  - `letterboxd.com/thethomp/films/ratings/` returns a Cloudflare challenge (403).
+    Do not rely on scraping ratings pages.
+
+  Path: CSV export for full history and initial import, RSS for incremental sync
+  of new ratings. The official API is approval-gated and should not be planned
+  around.
 - **Venue expansion.** Survey Seattle repertory houses — Grand Illusion,
   Northwest Film Forum, The Beacon, Central Cinema, Ark Lodge, The Admiral — and
   report on which merit adapters before writing any.
