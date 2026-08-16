@@ -105,8 +105,14 @@ data/
 
 - [ ] **Step 5: Verify the toolchain runs**
 
-Run: `npx tsc --noEmit && npx vitest run --passWithNoTests`
-Expected: no type errors; Vitest reports "No test files found" and exits 0.
+Run: `npx vitest run --passWithNoTests`
+Expected: Vitest reports "No test files found" and exits 0.
+
+Do **not** run `tsc --noEmit` yet. `include` points at `src`, `tests`, and `scripts`,
+none of which exist until Task 2, and `tsc` exits 2 with `TS18003: No inputs were
+found in config file` when its includes match nothing. That is a missing-input
+error, not a type error. Do not add a placeholder file to silence it — Task 2
+resolves it by adding the first real source file. Typechecking begins in Task 2.
 
 - [ ] **Step 6: Commit**
 
