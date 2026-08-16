@@ -34,11 +34,15 @@ export async function runSweep(
         }
       }
 
+      // Iterate the adapter's venues rather than the map: a venue that
+      // returned nothing has no map entry, and skipping it would leave its
+      // stored rows advertising shows that no longer exist.
       let itemCount = 0
-      for (const [venueId, screenings] of byVenue) {
-        const result = await upsertScreenings(db, screenings, now)
+      for (const venue of adapter.venues) {
+        const forVenue = byVenue.get(venue.id) ?? []
+        const result = await upsertScreenings(db, forVenue, now)
         itemCount += result.inserted + result.updated
-        await markMissing(db, venueId, screenings.map((s) => s.sourceScreeningId))
+        await markMissing(db, venue.id, forVenue.map((s) => s.sourceScreeningId))
       }
 
       await recordRun(db, {
