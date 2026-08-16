@@ -19,6 +19,8 @@ undifferentiated list.
 - One place to see what is screening at tracked venues, and when.
 - Surface noteworthy screenings: special formats and events, films matching the
   user's taste, watchlist titles, and upcoming release dates.
+- Use the user's Letterboxd history — watchlist and ratings — as the taste signal,
+  rather than requiring taste to be described by hand.
 - Stay current without manual intervention.
 - Make it obvious when a data source has broken.
 - Link through to the venue's ticket page for any screening.
@@ -41,8 +43,8 @@ Adding auth later is a contained change at the HTTP layer.
 |---|---|---|
 | Cinemark Lincoln Square (Bellevue) | HTML | IMAX + Reserve & Dine |
 | Cinemark Totem Lake (Kirkland) | HTML | |
-| AMC Alderwood | Official API | Blocked on vendor key |
-| AMC Pacific Place (Seattle) | Official API | Blocked on vendor key |
+| AMC Alderwood | Official API | Key issued, pending activation |
+| AMC Pacific Place (Seattle) | Official API | Key issued, pending activation |
 | SIFF Cinema Downtown | HTML | |
 | SIFF Cinema Uptown | HTML | |
 | SIFF Film Center | HTML | |
@@ -59,10 +61,23 @@ adapter designs and should be re-verified if implementation starts much later.
 structured JSON error, `"The request requires vendor authentication"`, confirming
 a working versioned REST API behind a vendor key. The developer portal at
 `developers.amctheatres.com` is Cloudflare-protected and must be accessed from a
-normal browser. A vendor key was issued to the user on 2026-08-16. The portal
-noted that changes deploy to production on Thursdays, so the key may be valid
-against staging before it is valid in production — this has not yet been tested
-and should be confirmed before the AMC adapter is built.
+normal browser.
+
+A vendor key was issued to the user on 2026-08-16 and tested the same day. Two
+findings:
+
+- **The authentication header is `X-AMC-Vendor-Key`.** Third-party documentation
+  claiming `X-API-Key` is wrong; that header produces a generic
+  `400 "The request requires vendor authentication"`.
+- With the correct header, every catalog endpoint (`v1/theatres`, `v2/theatres`,
+  `v2/movies/views/now-playing`, `v1/locations`) returns
+  `403 {"code": 12005, "exceptionMessage": "Unauthorized VendorKey."}`. The key is
+  recognized but not yet activated.
+
+The developer portal states that changes deploy to production on Thursdays, which
+is consistent with a key issued Sunday 2026-08-16 becoming active Thursday
+2026-08-20. Retest then. If it remains unauthorized after that date, AMC degrades
+to an HTML adapter like the other sources.
 
 **Cinemark** — Theatre pages are fully server-rendered with no JavaScript
 framework. Showtime data is present in the delivered HTML with structured
@@ -79,6 +94,24 @@ exists. Slugs themselves carry special-event signal: observed examples include
 `faust-with-the-invincible-czars`. Elevent (`content.elevent.app`) provides the
 checkout widget only and is not a data source; SIFF's own pages are the source.
 
+**Letterboxd** — Account `TheThomp`. Verified by direct probe on 2026-08-16.
+
+- `letterboxd.com/thethomp/rss/` returns `application/rss+xml` with the 50 most
+  recent diary entries. Each item carries `tmdb:movieId`,
+  `letterboxd:memberRating`, `letterboxd:watchedDate`, `letterboxd:rewatch`,
+  `letterboxd:memberLike`, `filmTitle`, and `filmYear`. **The presence of TMDB IDs
+  means rated films need no title resolution at all** — they arrive keyed to the
+  same identifier the rest of the system uses.
+- `letterboxd.com/thethomp/watchlist/` returns paginated HTML at
+  `/watchlist/page/N/`, 28 films per page. Films are exposed via `data-item-slug`,
+  `data-item-name`, and `/film/<slug>/` links. A full crawl on 2026-08-16 returned
+  **219 unique films across 8 pages**. No TMDB IDs are present, so watchlist
+  entries require slug or title+year resolution.
+- `letterboxd.com/thethomp/films/ratings/` returns a Cloudflare challenge (403).
+  Do not scrape ratings pages; use RSS and CSV export instead.
+
+The official Letterboxd API is approval-gated and is not planned around.
+
 **Seattle Magic Theater** — Hand-rolled static site, no CMS, no structured data,
 no feed. The `/events` page rendered an "Upcoming Events" heading with no events
 listed. Trivial to parse; expect long empty stretches, and do not treat an empty
@@ -93,7 +126,7 @@ external sources → adapters → normalization → SQLite → scoring → API +
 ```
 
 The scheduler runs in-process. There is no queue, no separate worker, and no
-external database. At four venues refreshed a few times daily, additional
+external database. At five sources refreshed a few times daily, additional
 infrastructure would add maintenance cost without benefit.
 
 ### Stack
@@ -128,14 +161,30 @@ title_overrides
   raw_title, venue_id (nullable), tmdb_id
 
 watchlist
-  id, film_id (nullable), title_pattern, added_at, notes
+  id, film_id (nullable), title_pattern, added_at, notes, source
+
+letterboxd_entries
+  id, kind, film_slug, tmdb_id (nullable), title, year,
+  member_rating, watched_date, rewatch, liked, synced_at
+
+taste_affinities
+  id, dimension, value, mean_rating, sample_count, weight
 
 taste_rules
   id, kind, value, weight, enabled
 
 source_runs
-  id, adapter, started_at, finished_at, status, screening_count, error
+  id, source, started_at, finished_at, status, item_count, error
+
+app_state
+  key, value
 ```
+
+`source_runs.source` names an adapter or the Letterboxd sync; `item_count` is
+screenings for adapters and synced entries for Letterboxd.
+
+`app_state` holds singleton values, notably `last_visit_at`, which backs the
+"new since you last looked" marker in the UI.
 
 `local_date` is stored explicitly alongside `starts_at_utc` so that day-grouping
 in the UI never depends on the server's timezone. A 11:45pm screening belongs to
@@ -224,21 +273,72 @@ Seed weights (all stored in `taste_rules` and editable):
 
 | Signal | Weight |
 |---|---|
-| Watchlist match | +100 |
+| Watchlist match (manual or Letterboxd) | +100 |
 | Special-event tag (`70MM`, `35MM`, `LIVE_SCORE`, `Q_AND_A`, `ANNIVERSARY`) | +50 |
+| Letterboxd affinity, strong (see below) | +30 |
 | Non-English original language | +20 |
 | Preferred genre match | +15 |
 | Venue weight (SIFF, Seattle Magic Theater) | +15 |
 | `IMAX` tag | +10 |
+| Already watched, no special-event tag | −80 |
 
 Highlight threshold: score ≥ 40. Items below the threshold appear in the agenda
 but not the highlight feed.
 
+**Already-watched suppression.** A film present in `letterboxd_entries` with
+`kind = 'diary'` is heavily penalized, so last month's viewing does not crowd the
+feed. The penalty does not apply when the screening carries a special-event tag —
+a 70mm print of something already seen is precisely the kind of rewatch worth
+surfacing.
+
 ## Upcoming releases
 
 TMDB supplies `us_release_date`. The upcoming feed contains films within the next
-60 days that either appear on the watchlist or match at least one enabled taste
-rule, and that have no showtimes yet at any tracked venue.
+60 days that have no showtimes yet at any tracked venue, and that either appear on
+the watchlist, match at least one enabled taste rule, or carry a strong Letterboxd
+affinity.
+
+## Letterboxd integration
+
+Letterboxd is the primary taste signal, replacing most hand-written rules.
+
+Letterboxd is **not** a `VenueAdapter` — it produces no screenings. It is a
+separate sync module writing to `letterboxd_entries`, `watchlist`, and
+`taste_affinities`. It shares the common fetch layer and records `source_runs`
+rows, so its failures surface in the health view alongside adapter failures.
+
+**Initial import — CSV.** The user exports their data from Letterboxd (Settings →
+Import & Export) and drops the archive in place. This yields complete watchlist
+and full rating history, and is not subject to scraping fragility. This is the
+authoritative backfill and is run once.
+
+**Incremental sync — RSS.** The diary feed at `letterboxd.com/<user>/rss/` is
+polled on the normal sweep schedule. It returns the 50 most recent entries with
+`tmdb:movieId` already attached, so new ratings need no title resolution. Entries
+are upserted on `(film_slug, watched_date)`.
+
+**Watchlist sync — HTML.** The paginated watchlist is crawled on the same
+schedule, one request per page with the shared rate limit. Slugs resolve to TMDB
+via the existing title resolver using title and year; unresolved entries are
+retained by slug and surfaced in the health view.
+
+Because RSS only reaches back 50 entries, a gap longer than that between syncs is
+covered by re-running the CSV import. The system does not attempt to paginate
+history from HTML.
+
+**Deriving affinities.** `taste_affinities` is recomputed after each sync. For
+each dimension — genre, original language, director, decade — the system computes
+the mean member rating and sample count across rated films carrying that value.
+A dimension value counts as a **strong affinity** when its mean rating is at least
+0.5 stars above the user's overall mean and it has at least 5 rated samples. The
+minimum sample count exists to stop a single 5-star rating from turning a whole
+genre into a highlight generator.
+
+A film scores the strong-affinity bonus once, not once per matching dimension.
+
+**Watchlist unification.** Letterboxd watchlist entries populate the same
+`watchlist` table as manually added titles, distinguished by `source`. Manual
+entries are never overwritten by a sync.
 
 ## Scheduler and politeness
 
@@ -283,8 +383,8 @@ Responsive; usable on a phone.
 
 ## Health monitoring
 
-Every sweep writes a `source_runs` row. An adapter is flagged failing when it
-throws, or when its screening count drops by more than 50% against its trailing
+Every sweep writes a `source_runs` row. A source is flagged failing when it
+throws, or when its `item_count` drops by more than 50% against its trailing
 7-day median. Seattle Magic Theater is exempt from the count check, since zero
 events is its normal state.
 
@@ -298,17 +398,22 @@ Failures surface in the health view and are visible from the main UI.
   empty dashboard.
 - **Resolver tests** cover suffix stripping, override precedence, and
   below-threshold non-matches.
+- **Letterboxd tests** run against recorded RSS and watchlist HTML fixtures,
+  covering rating parsing, TMDB id extraction, pagination, and the affinity
+  computation including its minimum-sample-count floor.
 - **Scorer tests** are straightforward given the function's purity, and cover each
   seed weight and the threshold boundary.
 - **API integration tests** run against an in-memory SQLite instance.
 
 ## Risks
 
-**AMC vendor key.** Largely resolved — a key was issued on 2026-08-16. The
-remaining question is whether it is live in production immediately or only after
-AMC's next Thursday deploy. A single authenticated request settles it. If the key
-turns out to be staging-only or scoped away from catalog endpoints, AMC degrades
-to an HTML adapter like the others. Nothing else depends on it.
+**AMC vendor key.** A key was issued on 2026-08-16 and tested the same day: the
+API accepts the `X-AMC-Vendor-Key` header but returns `Unauthorized VendorKey`
+(code 12005) on all catalog endpoints, indicating the key is not yet activated.
+This matches AMC's stated Thursday production deploy cadence, so the expected
+resolution is 2026-08-20. If it is still unauthorized after that date, AMC
+degrades to an HTML adapter like the others. Nothing else depends on it, and it is
+sequenced last.
 
 **Scraper breakage.** Certain over time, not hypothetical. Mitigated by fixture
 tests plus the health view — the goal is fast, loud detection rather than
@@ -327,16 +432,20 @@ Riskiest work first:
 3. Cinemark adapter
 4. Seattle Magic Theater adapter
 5. TMDB client and title resolver
-6. Tag extractor (rules)
-7. Highlight scorer
-8. API
-9. UI (Layout A)
-10. Health view
-11. Deployment
-12. AMC adapter, when the key arrives
+6. Letterboxd import (CSV) and sync (RSS + watchlist HTML)
+7. Tag extractor (rules)
+8. Highlight scorer, including affinity derivation
+9. API
+10. UI (Layout A)
+11. Health view
+12. Deployment
+13. AMC adapter, once the vendor key activates
 
 SIFF is deliberately first among adapters. Its 70mm and live-score listings will
 expose a wrong data model in week one, while changing it is still cheap.
+
+Letterboxd follows the title resolver because it depends on it for watchlist
+slugs, and precedes the scorer because the scorer consumes its affinities.
 
 ## v2 roadmap
 
@@ -344,26 +453,8 @@ Recorded now, deliberately out of v1 scope:
 
 - **LLM tag extraction**, replacing rules behind the existing interface. Expected
   to substantially outperform rules on unstructured descriptions.
-- **Letterboxd integration.** Ratings and watchlist as the primary taste signal,
-  likely retiring most hand-written rules. Account: `TheThomp`. Verified by direct
-  probe on 2026-08-16:
-
-  - `letterboxd.com/thethomp/rss/` returns `application/rss+xml` with the 50 most
-    recent diary entries. Each item carries `tmdb:movieId`,
-    `letterboxd:memberRating`, `letterboxd:watchedDate`, `letterboxd:rewatch`,
-    `letterboxd:memberLike`, `filmTitle`, and `filmYear`. **The presence of TMDB
-    IDs means rated films need no title resolution at all** — they arrive keyed to
-    the same identifier the rest of the system uses.
-  - `letterboxd.com/thethomp/watchlist/` returns paginated HTML (at least 8 pages)
-    exposing films via `data-item-slug`, `data-item-link`, and `/film/<slug>/`
-    links. No TMDB IDs here, so watchlist entries need slug or title+year
-    resolution.
-  - `letterboxd.com/thethomp/films/ratings/` returns a Cloudflare challenge (403).
-    Do not rely on scraping ratings pages.
-
-  Path: CSV export for full history and initial import, RSS for incremental sync
-  of new ratings. The official API is approval-gated and should not be planned
-  around.
+- **LLM taste scoring**, layered on top of the Letterboxd affinity model once
+  there is enough real usage to judge where the affinity model falls short.
 - **Venue expansion.** Survey Seattle repertory houses — Grand Illusion,
   Northwest Film Forum, The Beacon, Central Cinema, Ark Lodge, The Admiral — and
   report on which merit adapters before writing any.
