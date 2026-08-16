@@ -35,7 +35,41 @@ describe('parseCinemarkScreenings', () => {
 
   it('captures the auditorium format as a hint', () => {
     const hints = new Set(screenings.flatMap((s) => s.formatHints))
-    expect(hints.size).toBeGreaterThan(0)
+    expect([...hints].sort()).toEqual(['IMAX 2D'])
+  })
+
+  it('does not treat a subtitle or language label as a format', () => {
+    // Roughly 40% of non-empty data-print-type-name values in the fixture are
+    // of this shape. Emitting them would route an ordinary subtitled screening
+    // into tag extraction and the special-event score.
+    const subtitled = screenings.filter((s) => /with English Subtitles/i.test(s.rawTitle))
+    expect(subtitled.length).toBeGreaterThan(0)
+    for (const screening of subtitled) {
+      expect(screening.formatHints).toEqual([])
+    }
+    expect(
+      screenings.some((s) => s.formatHints.some((h) => /SUBTITLE|SPOKEN/i.test(h))),
+    ).toBe(false)
+  })
+
+  it('keeps genuine premium formats', () => {
+    const block = (id: string, printType: string) =>
+      `<div class="showtimeMovieBlock">
+         <div class="movieBlockHeader"><h3>Test Film</h3></div>
+         <a class="showtime-link" data-print-type-name="${printType}"
+            href="/TicketSeatMap/?ShowtimeId=${id}&Showtime=2026-08-16T11:50:00"></a>
+       </div>`
+    const synthetic = parseCinemarkScreenings(
+      `<html><body>
+         ${block('1', 'XD')}
+         ${block('2', 'D-BOX')}
+         ${block('3', 'IMAX 2D')}
+         ${block('4', 'Hindi Spoken with English Subtitles Standard Format')}
+       </body></html>`,
+      venue,
+    )
+
+    expect(synthetic.map((s) => s.formatHints)).toEqual([['XD'], ['D-BOX'], ['IMAX 2D'], []])
   })
 
   it('attaches the film title to every screening', () => {

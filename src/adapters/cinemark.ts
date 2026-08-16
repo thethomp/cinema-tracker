@@ -69,10 +69,18 @@ export function parseCinemarkScreenings(html: string, venue: VenueRef): RawScree
   return results
 }
 
-/** "Standard Format" carries no signal; anything else does. */
+/**
+ * "Standard Format" carries no signal; anything else does — but Cinemark
+ * prefixes it with a language/subtitle label rather than using a separate
+ * field, e.g. "Telugu Spoken with English Subtitles Standard Format". Those are
+ * ordinary screenings, and emitting them as format hints would feed tag
+ * extraction and the special-event score with a presentation detail. So a
+ * trailing "Standard Format" disqualifies the whole value, prefix and all.
+ */
 function normalizeFormat(format: string | undefined): string[] {
-  if (!format || /^standard format$/i.test(format)) return []
-  return [format.toUpperCase()]
+  const trimmed = format?.trim()
+  if (!trimmed || /standard format$/i.test(trimmed)) return []
+  return [trimmed.toUpperCase()]
 }
 
 /** Cinemark renders runtime as "2 hr 25 min". */
