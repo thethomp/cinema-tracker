@@ -79,6 +79,13 @@ is consistent with a key issued Sunday 2026-08-16 becoming active Thursday
 2026-08-20. Retest then. If it remains unauthorized after that date, AMC degrades
 to an HTML adapter like the other sources.
 
+AMC documents a sandbox at `developers.amctheatres.com/GettingStarted/Sandbox`,
+which may allow development before the production key activates. The page is
+Cloudflare-protected and could not be read during design, and guessing sandbox
+hostnames (`api.sandbox.`, `sandbox.api.`, `api-sandbox.`) produced only Cloudflare
+error responses. **Read that page from a browser before starting the AMC adapter**
+and record the real sandbox base URL and credentials here.
+
 **Cinemark** — Theatre pages are fully server-rendered with no JavaScript
 framework. Showtime data is present in the delivered HTML with structured
 attributes: `data-movieid`, `data-movie-title`, `data-showdates`, `data-datevalue`,
@@ -274,6 +281,7 @@ Seed weights (all stored in `taste_rules` and editable):
 | Signal | Weight |
 |---|---|
 | Watchlist match (manual or Letterboxd) | +100 |
+| Declared preference match (seeded: Horror) | +60 |
 | Special-event tag (`70MM`, `35MM`, `LIVE_SCORE`, `Q_AND_A`, `ANNIVERSARY`) | +50 |
 | Letterboxd affinity, strong (see below) | +30 |
 | Non-English original language | +20 |
@@ -284,6 +292,20 @@ Seed weights (all stored in `taste_rules` and editable):
 
 Highlight threshold: score ≥ 40. Items below the threshold appear in the agenda
 but not the highlight feed.
+
+**Declared preferences.** Standing preferences the user states outright, stored in
+`taste_rules` with `kind = 'declared'`. They are deliberately weighted above the
+highlight threshold so that a match always reaches the feed on its own, without
+needing any other signal, and they are never overridden by weak derived affinity.
+
+Seeded with **Horror**, at +60. That places horror above special-event tags and
+below watchlist hits in the feed ordering — any horror film screening at a tracked
+venue surfaces, and an explicitly watchlisted film still outranks it.
+
+Declared preferences are still subject to already-watched suppression: a horror
+film scores 60 against a −80 penalty and therefore does not resurface once seen,
+unless the screening carries a special-event tag. This is intentional, and it is
+the main case to revisit if the feed feels wrong in practice.
 
 **Already-watched suppression.** A film present in `letterboxd_entries` with
 `kind = 'diary'` is heavily penalized, so last month's viewing does not crowd the
