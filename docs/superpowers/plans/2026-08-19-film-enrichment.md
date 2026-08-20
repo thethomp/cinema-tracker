@@ -996,6 +996,37 @@ describe('resolveTitle', () => {
     expect(result.reason).toContain('no confident match')
   })
 
+  // Verified live on 2026-08-19: TMDB serves the UK primary title for this film,
+  // so an exact-match-only rule would reject a title that is plainly the same.
+  it('accepts a regional title variant on high token overlap', async () => {
+    const client = stubClient([
+      candidate({ tmdbId: 671, title: "Harry Potter and the Philosopher's Stone", year: 2001 }),
+    ])
+
+    const result = await resolveTitle(db, client as never, "Harry Potter and the Sorcerer's Stone")
+
+    expect(result.status).toBe('resolved')
+    expect(result.tmdbId).toBe(671)
+    expect(result.via).toBe('search')
+  })
+
+  it('does not accept a short title on partial overlap', async () => {
+    // Two shared tokens out of three is above the ratio but below the absolute
+    // floor — "DC Returns" is not "DC League of Super-Pets".
+    const client = stubClient([candidate({ tmdbId: 9, title: 'DC Returns' })])
+
+    expect((await resolveTitle(db, client as never, 'DC')).status).toBe('unresolved')
+  })
+
+  it('prefers an exact match over a merely similar one', async () => {
+    const client = stubClient([
+      candidate({ tmdbId: 1, title: "Harry Potter and the Philosopher's Stone", popularity: 99 }),
+      candidate({ tmdbId: 2, title: "Harry Potter and the Sorcerer's Stone", popularity: 1 }),
+    ])
+
+    expect((await resolveTitle(db, client as never, "Harry Potter and the Sorcerer's Stone")).tmdbId).toBe(2)
+  })
+
   it('does not pass a re-release year as a TMDB year hint', async () => {
     const client = stubClient([candidate({ tmdbId: 671, title: 'Harry Potter and the Goblet of Fire', year: 2005 })])
 
@@ -1043,6 +1074,19 @@ import { films, titleOverrides } from '../db/schema.js'
 import type { TmdbClient } from '../tmdb/client.js'
 import { normalizeTitle, matchKey } from './normalize.js'
 
+/**
+ * Token-overlap floor for accepting a non-exact title. 0.75 accepts
+ * "Sorcerer's Stone" vs "Philosopher's Stone" (5 of 6 tokens, dice 0.83) and
+ * rejects genuinely different films.
+ */
+const SIMILARITY_THRESHOLD = 0.75
+
+/**
+ * Absolute floor on shared tokens, so short titles cannot pass on ratio alone.
+ * Without it, "DC" vs "DC Returns" scores 0.67 on one shared token.
+ */
+const MIN_SHARED_TOKENS = 3
+
 export type ResolveResult =
   | { status: 'resolved'; tmdbId: number; via: 'override' | 'cache' | 'search' }
   | { status: 'unresolved'; reason: string }
@@ -1067,13 +1111,40 @@ export async function resolveTitle(
   const candidates = await client.searchMovies(normalized.title, undefined)
   if (candidates.length === 0) return { status: 'unresolved', reason: 'no results from TMDB' }
 
+  // Exact normalized match wins outright. Several candidates can tie here —
+  // "The Odyssey" really does return two distinct 2026 films — so break on
+  // popularity.
   const exact = candidates.filter((c) => matchKey(c.title) === key)
-  if (exact.length === 0) {
-    return { status: 'unresolved', reason: `no confident match among ${candidates.length} candidates` }
+  if (exact.length > 0) {
+    const best = exact.reduce((a, b) => (b.popularity > a.popularity ? b : a))
+    return { status: 'resolved', tmdbId: best.tmdbId, via: 'search' }
   }
 
-  const best = exact.reduce((a, b) => (b.popularity > a.popularity ? b : a))
-  return { status: 'resolved', tmdbId: best.tmdbId, via: 'search' }
+  // Fall back to token overlap, for regional title variants. TMDB serves UK
+  // primary titles, so "Sorcerer's Stone" comes back as "Philosopher's Stone" —
+  // plainly the same film, but not an exact match.
+  const similar = candidates
+    .map((c) => ({ candidate: c, ...titleSimilarity(key, matchKey(c.title)) }))
+    .filter((s) => s.dice >= SIMILARITY_THRESHOLD && s.shared >= MIN_SHARED_TOKENS)
+    .sort((a, b) => b.dice - a.dice || b.candidate.popularity - a.candidate.popularity)
+
+  const winner = similar[0]
+  if (winner) {
+    return { status: 'resolved', tmdbId: winner.candidate.tmdbId, via: 'search' }
+  }
+
+  return { status: 'unresolved', reason: `no confident match among ${candidates.length} candidates` }
+}
+
+/** Dice coefficient over word tokens, plus the raw count of shared tokens. */
+function titleSimilarity(a: string, b: string): { dice: number; shared: number } {
+  const left = new Set(a.split(' ').filter(Boolean))
+  const right = new Set(b.split(' ').filter(Boolean))
+  if (left.size === 0 || right.size === 0) return { dice: 0, shared: 0 }
+
+  let shared = 0
+  for (const token of left) if (right.has(token)) shared += 1
+  return { dice: (2 * shared) / (left.size + right.size), shared }
 }
 
 async function findOverride(db: Db, rawTitle: string, venueId?: string): Promise<number | undefined> {
