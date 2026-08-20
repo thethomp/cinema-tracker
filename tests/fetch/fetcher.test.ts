@@ -198,3 +198,54 @@ describe('Fetcher default transport', () => {
     }
   })
 })
+
+// AMC's API authenticates with an `X-AMC-Vendor-Key` header, so `text` takes
+// optional extra headers. Adapters must never reach around the Fetcher to send
+// them — that would skip per-host rate limiting.
+describe('Fetcher extra headers', () => {
+  it('merges caller-supplied headers into the request', async () => {
+    const calls: RequestInit[] = []
+    const impl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init)
+      return new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, fetchImpl: impl as never })
+
+    await fetcher.text('https://example.com/a', { 'X-AMC-Vendor-Key': 'secret' })
+
+    const headers = calls[0]!.headers as Record<string, string>
+    expect(headers['X-AMC-Vendor-Key']).toBe('secret')
+    expect(headers['User-Agent']).toContain('cinema-tracker')
+  })
+
+  it('keeps the identifying defaults when a caller tries to override them', async () => {
+    const calls: RequestInit[] = []
+    const impl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init)
+      return new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, fetchImpl: impl as never })
+
+    await fetcher.text('https://example.com/a', { 'User-Agent': 'Mozilla/5.0 (spoofed)' })
+
+    const headers = calls[0]!.headers as Record<string, string>
+    expect(headers['User-Agent']).toContain('cinema-tracker')
+  })
+
+  it('resends the extra headers on a retry', async () => {
+    const calls: RequestInit[] = []
+    let n = 0
+    const impl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init)
+      n += 1
+      return n === 1
+        ? new Response('busy', { status: 503 })
+        : new Response('ok', { status: 200 })
+    })
+    const fetcher = new Fetcher({ minIntervalMs: 0, retryDelayMs: 1, fetchImpl: impl as never })
+
+    expect(await fetcher.text('https://example.com/a', { 'X-AMC-Vendor-Key': 'secret' })).toBe('ok')
+    expect(calls).toHaveLength(2)
+    expect((calls[1]!.headers as Record<string, string>)['X-AMC-Vendor-Key']).toBe('secret')
+  })
+})
