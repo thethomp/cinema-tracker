@@ -46,3 +46,26 @@ export const sourceRuns = sqliteTable('source_runs', {
   itemCount: integer('item_count').notNull().default(0),
   error: text('error'),
 })
+
+export const films = sqliteTable('films', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tmdbId: integer('tmdb_id').unique(),
+  title: text('title').notNull(),
+  year: integer('year'),
+  runtimeMinutes: integer('runtime_minutes'),
+  originalLanguage: text('original_language'),
+  genres: text('genres', { mode: 'json' }).notNull().$type<string[]>(),
+  director: text('director'),
+  posterUrl: text('poster_url'),
+  synopsis: text('synopsis'),
+  usReleaseDate: text('us_release_date'),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' }),
+})
+
+export const titleOverrides = sqliteTable('title_overrides', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  rawTitle: text('raw_title').notNull(),
+  /** Null means the override applies at every venue. */
+  venueId: text('venue_id'),
+  tmdbId: integer('tmdb_id').notNull(),
+})

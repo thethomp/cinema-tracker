@@ -46,6 +46,28 @@ const CREATE_STATEMENTS = [
      item_count INTEGER NOT NULL DEFAULT 0,
      error TEXT
    )`,
+  `CREATE TABLE IF NOT EXISTS films (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     tmdb_id INTEGER UNIQUE,
+     title TEXT NOT NULL,
+     year INTEGER,
+     runtime_minutes INTEGER,
+     original_language TEXT,
+     genres TEXT NOT NULL,
+     director TEXT,
+     poster_url TEXT,
+     synopsis TEXT,
+     us_release_date TEXT,
+     fetched_at INTEGER
+   )`,
+  `CREATE TABLE IF NOT EXISTS title_overrides (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     raw_title TEXT NOT NULL,
+     venue_id TEXT,
+     tmdb_id INTEGER NOT NULL
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS title_overrides_key
+     ON title_overrides (raw_title, IFNULL(venue_id, ''))`,
 ]
 
 export type Db = BetterSQLite3Database<typeof schema>
