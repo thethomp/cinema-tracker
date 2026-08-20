@@ -33,7 +33,7 @@ describe('parseCinemarkScreenings', () => {
         'https://www.cinemark.com/TicketSeatMap/?TheaterId=1118&ShowtimeId=382984' +
         '&CinemarkMovieId=108919&Showtime=2026-08-16T13:15:00',
       sourceScreeningId: '382984',
-      formatHints: ['IMAX 2D'],
+      formatHints: ['IMAX'],
       runtimeMinutes: 172,
     })
   })
@@ -61,7 +61,7 @@ describe('parseCinemarkScreenings', () => {
 
   it('captures the auditorium format as a hint', () => {
     const hints = new Set(screenings.flatMap((s) => s.formatHints))
-    expect([...hints].sort()).toEqual(['IMAX 2D'])
+    expect([...hints].sort()).toEqual(['IMAX'])
   })
 
   it('does not treat a subtitle or language label as a format', () => {
@@ -95,7 +95,7 @@ describe('parseCinemarkScreenings', () => {
       venue,
     )
 
-    expect(synthetic.map((s) => s.formatHints)).toEqual([['XD'], ['D-BOX'], ['IMAX 2D'], []])
+    expect(synthetic.map((s) => s.formatHints)).toEqual([['XD'], ['D-BOX'], ['IMAX'], []])
   })
 
   it('attaches the film title to every screening', () => {
@@ -140,3 +140,52 @@ describe('createCinemarkAdapter', () => {
     expect(await adapter.fetch(venue, { from: '2026-08-17', to: '2026-08-19' })).toEqual([])
   })
 })
+
+describe('normalizeFormat against real Cinemark labels', () => {
+  // These exact strings were observed live on 2026-08-19. data-print-type-name
+  // concatenates format, seating, language and room attributes in varying
+  // order, so only recognized premium formats may survive.
+  const cases: Array<[string, string[]]> = [
+    ['IMAX 2D', ['IMAX']],
+    ['REALD 3D', ['3D']],
+    ['Luxury Lounger XD', ['XD']],
+    ['Luxury Lounger XD D-BOX', ['XD', 'D-BOX']],
+    ['XD Luxury Lounger REALD 3D D-BOX', ['XD', 'D-BOX', '3D']],
+    ['Standard Format Luxury Lounger', []],
+    ['Standard Format Luxury Lounger D-BOX', ['D-BOX']],
+    ['Open Caption Standard Format Luxury Lounger', []],
+    ['Party Space for up to 30 People', []],
+    ['Telugu Spoken with English Subtitles Standard Format Luxury Lounger', []],
+    ['Kannada Spoken with English Subtitles Standard Format Luxury Lounger', []],
+    ['Luxury Lounger XD Telugu Spoken with English Subtitles', ['XD']],
+  ]
+
+  for (const [label, expected] of cases) {
+    it(`maps "${label}" to [${expected.join(', ')}]`, () => {
+      const html = `
+        <div class="showtimeMovieBlock">
+          <div class="movieBlockHeader"><h3>Film</h3></div>
+          <div class="showtimeMovieRuntime">1 hr 30 min</div>
+          <a class="showtime-link" data-print-type-name="${label}"
+             href="/TicketSeatMap/?TheaterId=1&ShowtimeId=9&CinemarkMovieId=2&Showtime=2026-08-19T19:00:00">7:00pm</a>
+        </div>`
+      const [screening] = parseCinemarkScreenings(html, venue)
+      expect(screening!.formatHints.sort()).toEqual([...expected].sort())
+    })
+  }
+
+  it('never emits seating, language, or room text as a format hint', () => {
+    const noise = /LOUNGER|SPOKEN|SUBTITLE|PARTY|STANDARD|CAPTION|PEOPLE/i
+    for (const [label] of cases) {
+      const html = `
+        <div class="showtimeMovieBlock">
+          <div class="movieBlockHeader"><h3>Film</h3></div>
+          <a class="showtime-link" data-print-type-name="${label}"
+             href="/TicketSeatMap/?TheaterId=1&ShowtimeId=9&CinemarkMovieId=2&Showtime=2026-08-19T19:00:00">7:00pm</a>
+        </div>`
+      const [screening] = parseCinemarkScreenings(html, venue)
+      for (const hint of screening!.formatHints) expect(hint).not.toMatch(noise)
+    }
+  })
+})
+

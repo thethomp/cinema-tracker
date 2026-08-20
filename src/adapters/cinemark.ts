@@ -76,10 +76,31 @@ export function parseCinemarkScreenings(html: string, venue: VenueRef): RawScree
  * extraction and the special-event score with a presentation detail. So a
  * trailing "Standard Format" disqualifies the whole value, prefix and all.
  */
+/**
+ * `data-print-type-name` concatenates independent attributes in varying order —
+ * premium format, seating tier, spoken language, and party-room labels all run
+ * together, e.g. "Luxury Lounger XD Telugu Spoken with English Subtitles" or
+ * "Standard Format Luxury Lounger D-BOX".
+ *
+ * Matching or stripping suffixes cannot separate these reliably, so we extract
+ * only recognized premium formats and discard everything else. An unrecognized
+ * label yields no hints rather than leaking seating or language text into
+ * `formatHints`, which downstream scoring treats as special-event signal.
+ */
+const PREMIUM_FORMATS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bIMAX\b/i, 'IMAX'],
+  [/\bXD\b/i, 'XD'],
+  [/\bD-?BOX\b/i, 'D-BOX'],
+  [/\bDOLBY\b/i, 'DOLBY'],
+  [/\b(?:REALD\s+)?3D\b/i, '3D'],
+  [/\b70\s?MM\b/i, '70MM'],
+  [/\b35\s?MM\b/i, '35MM'],
+]
+
 function normalizeFormat(format: string | undefined): string[] {
-  const trimmed = format?.trim()
-  if (!trimmed || /standard format$/i.test(trimmed)) return []
-  return [trimmed.toUpperCase()]
+  const label = format?.trim()
+  if (!label) return []
+  return PREMIUM_FORMATS.filter(([pattern]) => pattern.test(label)).map(([, tag]) => tag)
 }
 
 /** Cinemark renders runtime as "2 hr 25 min". */
