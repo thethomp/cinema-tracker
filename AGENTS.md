@@ -28,7 +28,8 @@ npm test                  # should be all green before you change anything
 | `npm test` | Full Vitest suite. No network access. |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run sweep` | Fetch showtimes from all venues into SQLite. Hits live sites. |
-| `npm run resolve` | Resolve unresolved raw titles against TMDB. Hits live API. |
+| `npm run resolve` | Resolve unresolved raw titles against TMDB, and fetch metadata for rated Letterboxd films. Hits live API. |
+| `npm run score` | Recompute taste affinities, tag and score every future screening, print the top highlights. No network. |
 
 `npm run sweep` takes a few minutes — the fetch layer allows one request per host
 every 2 seconds by design. **Don't run two full sweeps back to back**; Cinemark
@@ -50,6 +51,10 @@ venue sites/APIs → adapters → normalize → SQLite → resolve → score →
 | `src/store/` | Database reads and writes. |
 | `src/sweep/` | Orchestration across adapters. |
 | `src/db/` | Schema, connection, seeding. |
+| `src/letterboxd/` | Letterboxd ingestion. Parsers are pure; `sync.ts` is the only part with I/O. |
+| `src/taste/` | Affinity derivation from rated films, and TMDB backfill for them. |
+| `src/tags/` | Rule-based tag extraction, behind an async interface an LLM can replace. |
+| `src/score/` | Pure highlight scorer plus the batch pass that stores scores. |
 
 Design docs are in `docs/superpowers/specs/`, implementation plans in
 `docs/superpowers/plans/`. **Read the spec before changing behavior** — it records

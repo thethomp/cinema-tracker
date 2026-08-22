@@ -37,3 +37,16 @@ export interface VenueAdapter {
   readonly venues: VenueRef[]
   fetch(venue: VenueRef, range: DateRange): Promise<RawScreening[]>
 }
+
+/**
+ * One firing signal behind a highlight score. Stored as JSON on the screening
+ * so the UI can explain *why* something was surfaced, and so a rule that is
+ * misfiring is visible rather than buried in an aggregate number.
+ */
+export interface ScoreReason {
+  /** Signal family, e.g. "watchlist", "declared", "special-event". */
+  signal: string
+  /** What actually matched, e.g. "Horror" or "70MM, ANNIVERSARY". */
+  detail: string
+  weight: number
+}
