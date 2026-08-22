@@ -74,9 +74,41 @@ findings:
   `403 {"code": 12005, "exceptionMessage": "Unauthorized VendorKey."}`. The key is
   recognized but not yet activated.
 
-The developer portal states that changes deploy to production on Thursdays, which
-is consistent with a key issued Sunday 2026-08-16 becoming active Thursday
-2026-08-20. Retest then. If it remains unauthorized after that date, AMC degrades
+**The key activated as predicted.** Verified working 2026-08-19: `/v2/theatres`
+returns 200 with 524 theatres. The Thursday-deploy theory held.
+
+Verified endpoints and identifiers:
+
+- Theatres: `GET /v2/theatres?pageSize=200&pageNumber=N` (paginated, 524 total).
+  **AMC Alderwood Mall 16 = id 2629** (`amc-alderwood-mall-16`, Lynnwood WA).
+  **AMC Pacific Place 11 = id 880** (`amc-pacific-place-11`, Seattle WA).
+- Showtimes: `GET /v2/theatres/{id}/showtimes/{YYYY-MM-DD}` returns 200, paginated
+  (`count` vs 10 returned per page).
+
+A showtime carries everything the adapter needs, already structured:
+
+```
+id                 145711542
+movieId            76238
+movieName          The Odyssey
+showDateTimeLocal  2026-08-20T12:30:00
+showDateTimeUtc    2026-08-20T19:30:00Z
+premiumFormat      70mm
+purchaseUrl        https://www.amctheatres.com/showtimes/all/2026-08-20/pacificplace/all/145711542
+auditorium         10
+attributes         ['70mm', 'AMC Artisan Films', 'Reserved Seating']
+```
+
+Two consequences for the AMC adapter, which make it the simplest of the four:
+
+- `showDateTimeUtc` is an absolute instant, so no wall-clock conversion is needed.
+  The adapter still derives `localDate` via `localDateOf`.
+- `attributes` is a structured array, not a concatenated label. Unlike Cinemark's
+  `data-print-type-name`, it needs no allowlist parsing — though it does mix
+  format (`70mm`), programming strand (`AMC Artisan Films`), and seating
+  (`Reserved Seating`), so it still needs filtering before becoming `formatHints`.
+
+The original text below is retained for the record. If it remains unauthorized after that date, AMC degrades
 to an HTML adapter like the other sources.
 
 AMC documents a sandbox at `developers.amctheatres.com/GettingStarted/Sandbox`,

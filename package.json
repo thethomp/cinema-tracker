@@ -9,7 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "sweep": "tsx src/cli.ts sweep"
+    "sweep": "tsx src/cli.ts sweep",
+    "resolve": "tsx src/cli.ts resolve"
   },
   "repository": {
     "type": "git",
