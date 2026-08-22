@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, real, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type { ScoreReason } from '../core/types.js'
 
 export const venues = sqliteTable('venues', {
   id: text('id').primaryKey(),
@@ -25,6 +26,10 @@ export const screenings = sqliteTable(
     runtimeMinutes: integer('runtime_minutes'),
     /** Source-supplied blurb, e.g. AMC's programming strand "AMC Artisan Films". */
     description: text('description'),
+    /** Last computed highlight score. Null until the score pass has run. */
+    score: real('score'),
+    /** JSON `Reason[]` explaining the score, for the UI to render. */
+    reasons: text('reasons', { mode: 'json' }).$type<ScoreReason[]>(),
     firstSeenAt: integer('first_seen_at', { mode: 'timestamp_ms' }).notNull(),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
     missedSweeps: integer('missed_sweeps').notNull().default(0),
@@ -107,7 +112,16 @@ export const tasteAffinities = sqliteTable('taste_affinities', {
 
 export const tasteRules = sqliteTable('taste_rules', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  kind: text('kind', { enum: ['declared', 'genre', 'language', 'venue', 'tag'] }).notNull(),
+  /**
+   * `watchlist` and `watched` name the two signals that are not a property of
+   * the film itself. They live here rather than as constants so that every
+   * weight in the scoring model — including the −80 already-watched penalty —
+   * is editable in one place. The strong-affinity bonus is the exception: it
+   * is carried by `taste_affinities.weight`, per row.
+   */
+  kind: text('kind', {
+    enum: ['declared', 'genre', 'language', 'venue', 'tag', 'watchlist', 'watched'],
+  }).notNull(),
   value: text('value').notNull(),
   weight: real('weight').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),

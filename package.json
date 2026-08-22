@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "sweep": "tsx src/cli.ts sweep",
-    "resolve": "tsx src/cli.ts resolve"
+    "resolve": "tsx src/cli.ts resolve",
+    "score": "tsx src/cli.ts score"
   },
   "repository": {
     "type": "git",

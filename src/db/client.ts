@@ -130,6 +130,10 @@ const ADDED_COLUMNS: { table: string; column: string; type: string }[] = [
   // RawScreening.description and were discarded at the store boundary until
   // this column existed.
   { table: 'screenings', column: 'description', type: 'TEXT' },
+  // Written by the score pass. Null means "not scored yet", which is a real
+  // state: a fresh sweep adds rows the scorer has not seen.
+  { table: 'screenings', column: 'score', type: 'REAL' },
+  { table: 'screenings', column: 'reasons', type: 'TEXT' },
 ]
 
 function addMissingColumns(sqlite: Database.Database): void {
