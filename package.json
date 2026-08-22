@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "sweep": "tsx src/cli.ts sweep",
     "resolve": "tsx src/cli.ts resolve",
-    "score": "tsx src/cli.ts score"
+    "score": "tsx src/cli.ts score",
+    "sync": "tsx src/cli.ts sync"
   },
   "repository": {
     "type": "git",

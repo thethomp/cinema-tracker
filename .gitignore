@@ -3,3 +3,8 @@
 node_modules/
 dist/
 data/
+
+# Letterboxd personal data export — never commit
+Letterboxd-Backup-*/
+data/letterboxd/
+.DS_Store

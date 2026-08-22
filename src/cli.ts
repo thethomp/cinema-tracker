@@ -7,12 +7,14 @@ import { runSweep } from './sweep/sweep.js'
 import { evaluateHealth } from './store/runs.js'
 import { TmdbClient } from './tmdb/client.js'
 import { runResolution } from './resolve/run.js'
-import { enrichWatchedFilms } from './taste/enrich.js'
+import { backfillDiaryTmdbIds, enrichWatchedFilms } from './taste/enrich.js'
+import { syncLetterboxd } from './letterboxd/sync.js'
 import { RuleTagExtractor } from './tags/extract.js'
 import { runScoring } from './score/run.js'
 import { HIGHLIGHT_THRESHOLD } from './score/score.js'
 
 const DB_PATH = process.env.DATABASE_PATH ?? 'data/cinema-tracker.db'
+const LETTERBOXD_CSV_DIR = process.env.LETTERBOXD_CSV_DIR ?? 'data/letterboxd'
 const FETCH_WINDOW_DAYS = 21
 const TZ = 'America/Los_Angeles'
 
@@ -75,6 +77,16 @@ async function resolve(): Promise<void> {
     // The taste model reads `films`, which the pass above fills only with
     // titles currently on sale. Without this the owner's diary joins to a
     // dozen rows and every affinity falls under the sample floor.
+    // A CSV export carries the full rating history but no TMDB ids, so give
+    // those entries ids before fetching metadata for them.
+    const backfilled = await backfillDiaryTmdbIds(db, client, new Date())
+    if (backfilled.resolved > 0 || backfilled.unresolved.length > 0) {
+      console.log(
+        `\nDiary backfill: matched ${backfilled.resolved}, ` +
+          `unmatched ${backfilled.unresolved.length}`,
+      )
+    }
+
     const enriched = await enrichWatchedFilms(db, client, new Date())
     console.log(
       `\nWatched-film metadata: fetched ${enriched.fetched}, already held ${enriched.skipped}`,
@@ -130,6 +142,38 @@ async function scoreCommand(): Promise<void> {
   }
 }
 
+async function sync(): Promise<void> {
+  const username = process.env.LETTERBOXD_USERNAME
+  if (!username) {
+    console.error('LETTERBOXD_USERNAME is not set. Add it to .env.')
+    process.exitCode = 1
+    return
+  }
+
+  const { db, close } = createDatabase(DB_PATH)
+  try {
+    const result = await syncLetterboxd(
+      db,
+      new Fetcher(),
+      { username, csvDir: LETTERBOXD_CSV_DIR },
+      new Date(),
+    )
+
+    if (result.status === 'failed') {
+      console.error(`Letterboxd sync failed: ${result.error}`)
+      process.exitCode = 1
+      return
+    }
+
+    console.log(
+      `Letterboxd: ${result.diaryEntries} diary entries, ` +
+        `${result.watchlistEntries} watchlist films (${result.pagesFetched} pages)`,
+    )
+  } finally {
+    close()
+  }
+}
+
 const command = process.argv[2]
 if (command === 'sweep') {
   await sweep()
@@ -137,7 +181,9 @@ if (command === 'sweep') {
   await resolve()
 } else if (command === 'score') {
   await scoreCommand()
+} else if (command === 'sync') {
+  await sync()
 } else {
-  console.error('Usage: cli.ts <sweep|resolve|score>')
+  console.error('Usage: cli.ts <sweep|resolve|sync|score>')
   process.exit(1)
 }

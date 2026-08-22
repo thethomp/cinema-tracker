@@ -1,8 +1,9 @@
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
 import { films, letterboxdEntries } from '../db/schema.js'
 import { upsertFilm } from '../store/films.js'
 import type { TmdbClient } from '../tmdb/client.js'
+import { matchKey } from '../resolve/normalize.js'
 
 export interface EnrichSummary {
   /** Films fetched from TMDB and written to `films` this run. */
@@ -67,6 +68,96 @@ export async function enrichWatchedFilms(
       // bug this pass exists to prevent.
       summary.failed.push({
         tmdbId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return summary
+}
+
+
+export interface BackfillSummary {
+  /** Entries given a TMDB id this run. */
+  resolved: number
+  /** "Title (Year)" for entries no confident match was found for. */
+  unresolved: string[]
+  failed: { title: string; error: string }[]
+}
+
+/**
+ * Give rated diary entries that arrived without a TMDB id one by searching on
+ * title and year.
+ *
+ * The RSS feed carries `tmdb:movieId`, but it reaches back only 50 entries. A
+ * CSV export carries the full history and no ids at all, so without this pass
+ * the affinity model silently ignores everything beyond the most recent 50
+ * viewings -- a taste model that looks populated while representing a fraction
+ * of the data.
+ *
+ * A candidate is accepted only when both the normalized title and the release
+ * year match exactly. The year is the safety check: titles repeat across
+ * decades, and a wrong film here corrupts the taste model rather than failing
+ * loudly. Entries with no year are therefore skipped rather than guessed at.
+ */
+export async function backfillDiaryTmdbIds(
+  db: Db,
+  client: Pick<TmdbClient, 'searchMovies' | 'getMovie'>,
+  now: Date,
+): Promise<BackfillSummary> {
+  const pending = await db
+    .select()
+    .from(letterboxdEntries)
+    .where(
+      sql`${letterboxdEntries.kind} = 'diary'
+          AND ${letterboxdEntries.memberRating} IS NOT NULL
+          AND ${letterboxdEntries.tmdbId} IS NULL
+          AND ${letterboxdEntries.year} IS NOT NULL`,
+    )
+
+  const summary: BackfillSummary = { resolved: 0, unresolved: [], failed: [] }
+  const resolvedByKey = new Map<string, number>()
+
+  for (const entry of pending) {
+    const year = entry.year
+    if (year == null) continue
+
+    const key = `${matchKey(entry.title)}@${year}`
+    const already = resolvedByKey.get(key)
+    if (already !== undefined) {
+      await db
+        .update(letterboxdEntries)
+        .set({ tmdbId: already })
+        .where(eq(letterboxdEntries.id, entry.id))
+      summary.resolved += 1
+      continue
+    }
+
+    try {
+      const candidates = await client.searchMovies(entry.title, year)
+      const match = candidates.find(
+        (candidate) => candidate.year === year && matchKey(candidate.title) === matchKey(entry.title),
+      )
+
+      if (!match) {
+        summary.unresolved.push(`${entry.title} (${year})`)
+        continue
+      }
+
+      const film = await client.getMovie(match.tmdbId)
+      await upsertFilm(db, film, now)
+      await db
+        .update(letterboxdEntries)
+        .set({ tmdbId: match.tmdbId })
+        .where(eq(letterboxdEntries.id, entry.id))
+
+      resolvedByKey.set(key, match.tmdbId)
+      summary.resolved += 1
+    } catch (error) {
+      // One bad title must not cost the rest of the history its metadata, but
+      // it is reported rather than swallowed.
+      summary.failed.push({
+        title: entry.title,
         error: error instanceof Error ? error.message : String(error),
       })
     }
