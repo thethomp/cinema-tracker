@@ -1,0 +1,139 @@
+import { describe, it, expect } from 'vitest'
+import { getHealth } from '../../src/read/health.js'
+import { recordRun } from '../../src/store/runs.js'
+import { NOW, addScreenings, emptyDb } from './fixture.js'
+
+const AT = (iso: string): Date => new Date(iso)
+
+describe('getHealth', () => {
+  it('reports every known source as never run on a fresh database', async () => {
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, { now: NOW })
+      expect(health.sources.map((s) => s.source)).toEqual([
+        'amc',
+        'cinemark',
+        'seattle-magic',
+        'siff',
+      ])
+      // Silence must not read as health: a source that has never run is not OK.
+      expect(health.sources.every((s) => s.healthy === false)).toBe(true)
+      expect(health.sources[0]!.reason).toBe('never run')
+      expect(health.sources[0]!.lastRunAt).toBeNull()
+      expect(health.sources[0]!.lastStatus).toBeNull()
+      expect(health.healthy).toBe(false)
+      expect(health.unresolvedTitles).toBe(0)
+      expect(health.unresolvedScreenings).toBe(0)
+    } finally {
+      close()
+    }
+  })
+
+  it('carries per-source status and the last run time', async () => {
+    const { db, close } = await emptyDb()
+    try {
+      for (const source of ['siff', 'cinemark', 'seattle-magic', 'amc']) {
+        await recordRun(db, {
+          source,
+          startedAt: AT('2026-08-22T06:00:00Z'),
+          finishedAt: AT('2026-08-22T06:02:00Z'),
+          status: 'ok',
+          itemCount: 400,
+        })
+      }
+      await recordRun(db, {
+        source: 'cinemark',
+        startedAt: AT('2026-08-22T12:00:00Z'),
+        finishedAt: AT('2026-08-22T12:00:05Z'),
+        status: 'failed',
+        itemCount: 0,
+        error: 'GET https://www.cinemark.com/... failed: 503',
+      })
+
+      const health = await getHealth(db, { now: NOW })
+      const byName = new Map(health.sources.map((s) => [s.source, s]))
+
+      expect(byName.get('siff')!.healthy).toBe(true)
+      expect(byName.get('siff')!.lastRunAt).toBe('2026-08-22T06:00:00.000Z')
+      expect(byName.get('siff')!.lastStatus).toBe('ok')
+      expect(byName.get('siff')!.itemCount).toBe(400)
+
+      expect(byName.get('cinemark')!.healthy).toBe(false)
+      expect(byName.get('cinemark')!.reason).toBe(
+        'last run failed: GET https://www.cinemark.com/... failed: 503',
+      )
+      expect(byName.get('cinemark')!.lastRunAt).toBe('2026-08-22T12:00:00.000Z')
+      expect(byName.get('cinemark')!.lastStatus).toBe('failed')
+
+      expect(health.healthy).toBe(false)
+      expect(health.lastRunAt).toBe('2026-08-22T12:00:00.000Z')
+    } finally {
+      close()
+    }
+  })
+
+  it('includes a source that only appears in source_runs', async () => {
+    const { db, close } = await emptyDb()
+    try {
+      await recordRun(db, {
+        source: 'letterboxd',
+        startedAt: AT('2026-08-22T05:00:00Z'),
+        finishedAt: AT('2026-08-22T05:00:10Z'),
+        status: 'ok',
+        itemCount: 285,
+      })
+      const health = await getHealth(db, { now: NOW })
+      expect(health.sources.map((s) => s.source)).toContain('letterboxd')
+      expect(health.sources.find((s) => s.source === 'letterboxd')!.healthy).toBe(true)
+    } finally {
+      close()
+    }
+  })
+
+  it('counts unresolved future titles, not every row ever swept', async () => {
+    const { db, close } = await emptyDb()
+    try {
+      await addScreenings(db, [
+        // Two showtimes of one unresolved title: one title, two screenings.
+        {
+          rawTitle: 'Amok Time + Star Trek III',
+          venueId: 'amc-alderwood',
+          startsAt: '2026-09-06T23:00:00Z',
+          localDate: '2026-09-06',
+        },
+        {
+          rawTitle: 'Amok Time + Star Trek III',
+          venueId: 'amc-alderwood',
+          startsAt: '2026-09-07T23:00:00Z',
+          localDate: '2026-09-07',
+        },
+        {
+          rawTitle: 'The Changeling + Star Trek: The Motion Picture',
+          venueId: 'cinemark-lincoln-square',
+          startsAt: '2026-09-04T23:00:00Z',
+          localDate: '2026-09-04',
+        },
+        // Past, cancelled, and resolved rows must not inflate the count.
+        {
+          rawTitle: 'Long Gone',
+          venueId: 'amc-alderwood',
+          startsAt: '2026-08-01T02:00:00Z',
+          localDate: '2026-07-31',
+        },
+        {
+          rawTitle: 'Dropped From The Listing',
+          venueId: 'amc-alderwood',
+          startsAt: '2026-09-04T23:00:00Z',
+          localDate: '2026-09-04',
+          cancelled: true,
+        },
+      ])
+
+      const health = await getHealth(db, { now: NOW })
+      expect(health.unresolvedTitles).toBe(2)
+      expect(health.unresolvedScreenings).toBe(3)
+    } finally {
+      close()
+    }
+  })
+})
