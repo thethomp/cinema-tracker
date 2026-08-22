@@ -1,0 +1,94 @@
+/*
+ * The masthead of a printed programme: name at scale on the left, the
+ * practical facts set small and flush right, one heavy rule under the lot.
+ * Asymmetric on purpose -- a centred masthead reads as a website header.
+ */
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0 0.75rem;
+  border-bottom: var(--rule-heavy);
+}
+
+.masthead__title {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: clamp(2.5rem, 8.5vw, 5rem);
+  line-height: 0.88;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+/* The two words stack, so the block is a mass of ink rather than a banner. */
+.masthead__title span {
+  display: block;
+}
+
+.masthead__title span:last-child {
+  /* Optically aligns the narrower second word with the first. */
+  margin-left: 0.02em;
+}
+
+.masthead__range {
+  display: block;
+  margin-top: 0.85rem;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+}
+
+.masthead__meta {
+  flex: 0 0 auto;
+  text-align: right;
+  padding-bottom: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.masthead__meta dt {
+  margin: 0;
+}
+
+.masthead__meta dd {
+  margin: 0.1rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* A second, hairline rule just under the heavy one: the double rule is the
+   printed-programme tell. */
+.masthead::after {
+  content: '';
+}
+
+.masthead-underline {
+  height: 0;
+  border-top: var(--rule);
+  margin-top: 3px;
+}
+
+@media (max-width: 640px) {
+  .masthead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .masthead__meta {
+    text-align: left;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem 2.25rem;
+    padding-bottom: 0;
+  }
+}
