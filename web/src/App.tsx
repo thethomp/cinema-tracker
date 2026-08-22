@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
-import { fetchHealth, fetchHighlights, fetchVenues } from './api'
+import { fetchAgenda, fetchHealth, fetchHighlights, fetchVenues } from './api'
+import { Agenda } from './components/Agenda'
 import { HighlightFeed } from './components/HighlightFeed'
 import { SpecialPresentations } from './components/SpecialPresentations'
 import { Masthead } from './components/Masthead'
@@ -22,6 +23,13 @@ export default function App() {
     useCallback(() => fetchHighlights({ days: DAYS, limit: HIGHLIGHT_LIMIT }), []),
     `highlights:${DAYS}:${HIGHLIGHT_LIMIT}`,
   )
+  const agenda = useResource(
+    useCallback(
+      () => fetchAgenda({ from: todayLocalDate, to: windowEndLocalDate }),
+      [todayLocalDate, windowEndLocalDate],
+    ),
+    `agenda:${todayLocalDate}:${windowEndLocalDate}`,
+  )
   const health = useResource(useCallback(() => fetchHealth(), []), 'health')
   const venues = useResource(useCallback(() => fetchVenues(), []), 'venues')
 
@@ -42,6 +50,8 @@ export default function App() {
         ) : null}
 
         <HighlightFeed resource={highlights} todayLocalDate={todayLocalDate} days={DAYS} />
+
+        <Agenda resource={agenda} todayLocalDate={todayLocalDate} />
       </div>
     </>
   )
