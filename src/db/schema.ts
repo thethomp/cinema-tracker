@@ -23,6 +23,8 @@ export const screenings = sqliteTable(
     formatHints: text('format_hints', { mode: 'json' }).notNull().$type<string[]>(),
     tags: text('tags', { mode: 'json' }).notNull().$type<string[]>(),
     runtimeMinutes: integer('runtime_minutes'),
+    /** Source-supplied blurb, e.g. AMC's programming strand "AMC Artisan Films". */
+    description: text('description'),
     firstSeenAt: integer('first_seen_at', { mode: 'timestamp_ms' }).notNull(),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
     missedSweeps: integer('missed_sweeps').notNull().default(0),
@@ -68,4 +70,50 @@ export const titleOverrides = sqliteTable('title_overrides', {
   /** Null means the override applies at every venue. */
   venueId: text('venue_id'),
   tmdbId: integer('tmdb_id').notNull(),
+})
+
+export const letterboxdEntries = sqliteTable('letterboxd_entries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind', { enum: ['diary', 'watchlist'] }).notNull(),
+  filmSlug: text('film_slug').notNull(),
+  tmdbId: integer('tmdb_id'),
+  title: text('title').notNull(),
+  year: integer('year'),
+  memberRating: real('member_rating'),
+  watchedDate: text('watched_date'),
+  rewatch: integer('rewatch', { mode: 'boolean' }).notNull().default(false),
+  liked: integer('liked', { mode: 'boolean' }).notNull().default(false),
+  syncedAt: integer('synced_at', { mode: 'timestamp_ms' }).notNull(),
+})
+
+export const watchlist = sqliteTable('watchlist', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  filmId: integer('film_id'),
+  titlePattern: text('title_pattern').notNull(),
+  year: integer('year'),
+  addedAt: integer('added_at', { mode: 'timestamp_ms' }).notNull(),
+  notes: text('notes'),
+  source: text('source', { enum: ['manual', 'letterboxd'] }).notNull(),
+})
+
+export const tasteAffinities = sqliteTable('taste_affinities', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  dimension: text('dimension', { enum: ['genre', 'language', 'director', 'decade'] }).notNull(),
+  value: text('value').notNull(),
+  meanRating: real('mean_rating').notNull(),
+  sampleCount: integer('sample_count').notNull(),
+  weight: real('weight').notNull(),
+})
+
+export const tasteRules = sqliteTable('taste_rules', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind', { enum: ['declared', 'genre', 'language', 'venue', 'tag'] }).notNull(),
+  value: text('value').notNull(),
+  weight: real('weight').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+})
+
+export const appState = sqliteTable('app_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
 })
