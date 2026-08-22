@@ -1,11 +1,13 @@
 import { useCallback, useMemo } from 'react'
 import { fetchAgenda, fetchHealth, fetchHighlights, fetchVenues } from './api'
 import { Agenda } from './components/Agenda'
+import { Health, HealthNotice } from './components/Health'
 import { HighlightFeed } from './components/HighlightFeed'
 import { SpecialPresentations } from './components/SpecialPresentations'
 import { Masthead } from './components/Masthead'
 import { localDateIn } from './format'
 import { useResource } from './useResource'
+import { useVisit } from './useVisit'
 
 /** The window the feed covers. Matches the API's own default. */
 const DAYS = 14
@@ -33,6 +35,17 @@ export default function App() {
   const health = useResource(useCallback(() => fetchHealth(), []), 'health')
   const venues = useResource(useCallback(() => fetchVenues(), []), 'venues')
 
+  /*
+   * The stamp waits for the feed.
+   *
+   * `POST /api/visit` overwrites the timestamp every NEW mark on this page was
+   * measured against, and the old value is not recoverable. Gating on
+   * `status === 'ready'` means the request cannot leave until the highlights
+   * response is in hand and committed to the DOM -- and means a failed or
+   * still-loading feed never stamps at all, because nothing was seen.
+   */
+  const visit = useVisit(highlights.status === 'ready')
+
   return (
     <>
       <div className="grain" aria-hidden="true" />
@@ -45,13 +58,24 @@ export default function App() {
           highlightCount={highlights.status === 'ready' ? highlights.data.length : null}
         />
 
+        {/* First thing under the masthead rule, so a dead source cannot be
+            scrolled past on the way to listings it has made wrong. */}
+        <HealthNotice resource={health} />
+
         {highlights.status === 'ready' ? (
           <SpecialPresentations entries={highlights.data} todayLocalDate={todayLocalDate} />
         ) : null}
 
-        <HighlightFeed resource={highlights} todayLocalDate={todayLocalDate} days={DAYS} />
+        <HighlightFeed
+          resource={highlights}
+          todayLocalDate={todayLocalDate}
+          days={DAYS}
+          visit={visit}
+        />
 
         <Agenda resource={agenda} todayLocalDate={todayLocalDate} />
+
+        <Health resource={health} />
       </div>
     </>
   )

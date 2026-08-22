@@ -1,5 +1,6 @@
 import type { FilmEntry } from '../api'
 import type { Resource } from '../useResource'
+import type { VisitBaseline } from '../visit'
 import { HighlightEntry } from './HighlightEntry'
 
 /** Stepped load animation, per the design's one-gesture motion budget. */
@@ -11,9 +12,11 @@ export interface HighlightFeedProps {
   resource: Resource<FilmEntry[]>
   todayLocalDate: string
   days: number
+  /** What "new since you last looked" is measured against. */
+  visit: VisitBaseline
 }
 
-export function HighlightFeed({ resource, todayLocalDate, days }: HighlightFeedProps) {
+export function HighlightFeed({ resource, todayLocalDate, days, visit }: HighlightFeedProps) {
   return (
     <section aria-labelledby="highlights-heading">
       <div className="section-head">
@@ -24,13 +27,18 @@ export function HighlightFeed({ resource, todayLocalDate, days }: HighlightFeedP
       </div>
 
       <div className="feed">
-        <FeedBody resource={resource} todayLocalDate={todayLocalDate} days={days} />
+        <FeedBody
+          resource={resource}
+          todayLocalDate={todayLocalDate}
+          days={days}
+          visit={visit}
+        />
       </div>
     </section>
   )
 }
 
-function FeedBody({ resource, todayLocalDate, days }: HighlightFeedProps) {
+function FeedBody({ resource, todayLocalDate, days, visit }: HighlightFeedProps) {
   if (resource.status === 'loading') {
     // Not a spinner. A line of type that says what is happening and vanishes
     // when the answer arrives.
@@ -72,6 +80,7 @@ function FeedBody({ resource, todayLocalDate, days }: HighlightFeedProps) {
           entry={entry}
           rank={index + 1}
           todayLocalDate={todayLocalDate}
+          visit={visit}
           delayMs={Math.min(index, MAX_STAGGERED) * STAGGER_MS}
         />
       ))}

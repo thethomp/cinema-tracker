@@ -1,0 +1,183 @@
+/*
+ * Health: the errata slip at the head, the colophon at the foot.
+ *
+ * The slip is the only vermilion on the page that is not a format stamp. That
+ * is a considered exception, not a drift: it appears only when a source has
+ * stopped returning data, which means the listings below it are wrong. It is
+ * absent on a good day, so it costs the stamps nothing.
+ */
+
+/* ---- errata slip -------------------------------------------------------- */
+
+.alarm {
+  /* Heavy vermilion above, hairline below: the weight is at the top so the
+     eye is caught on the way down the page rather than after passing it. */
+  border-top: 2px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    transparent 70%
+  );
+  padding: 0.85rem 0 1rem;
+  margin: 1.75rem 0 0;
+}
+
+.alarm__label {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent-sunk);
+  margin: 0 0 0.35rem;
+}
+
+.alarm__lead {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+  line-height: 1.15;
+  color: var(--ink);
+  margin: 0;
+}
+
+.alarm__list {
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.alarm__item {
+  display: flex;
+  gap: 0.85rem;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.alarm__source {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  flex: 0 0 8rem;
+}
+
+.alarm__reason {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  /* Adapter errors carry URLs. Let one break rather than widen the sheet. */
+  overflow-wrap: anywhere;
+}
+
+.alarm__foot {
+  margin: 0.65rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+/* ---- colophon ----------------------------------------------------------- */
+
+.colophon {
+  margin-top: 3.5rem;
+}
+
+.colophon__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--rule-heavy);
+}
+
+.colophon__row {
+  display: grid;
+  grid-template-columns: 1.1rem 8rem 1fr auto;
+  gap: 0 0.75rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: var(--rule);
+}
+
+.colophon__mark {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+/* One character of vermilion per dead source, and only in the mark. */
+.colophon__row--failed .colophon__mark {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.colophon__name {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.colophon__state {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.colophon__row--failed .colophon__state {
+  color: var(--ink);
+}
+
+.colophon__figures {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* The count and its age are one figure read together; the rule between them
+   is what stops "877" and "1h ago" reading as two unrelated numbers. */
+.colophon__ago {
+  border-left: var(--rule);
+  margin-left: 0.6rem;
+  padding-left: 0.6rem;
+}
+
+.colophon__foot {
+  margin: 0.85rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+/* ---- phone -------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .alarm__item {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .alarm__source {
+    flex: none;
+  }
+
+  /* The name takes the full width and the state hangs under it; four columns
+     at 390px would give the reason about eight characters. */
+  .colophon__row {
+    grid-template-columns: 1.1rem 1fr auto;
+  }
+
+  .colophon__state {
+    grid-column: 2 / -1;
+    font-size: 0.75rem;
+  }
+}

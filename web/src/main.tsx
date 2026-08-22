@@ -6,6 +6,7 @@ import './styles/base.css'
 import './styles/masthead.css'
 import './styles/highlights.css'
 import './styles/agenda.css'
+import './styles/health.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root is missing from index.html')

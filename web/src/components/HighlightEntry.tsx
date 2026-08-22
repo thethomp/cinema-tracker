@@ -1,6 +1,7 @@
 import type { FilmEntry } from '../api'
 import { entryDomId, isStamped, splitTags, summarizeShowtimes, venueSummary } from '../entry'
 import { formatLongDate, formatRuntime, formatTime, relativeDayLabel } from '../format'
+import { isNewToViewer, type VisitBaseline } from '../visit'
 import { FormatStamp } from './FormatStamp'
 
 /**
@@ -18,11 +19,19 @@ export interface HighlightEntryProps {
   rank: number
   /** Seattle's calendar date, for "Tonight" / "Tomorrow". */
   todayLocalDate: string
+  /** The previous visit, once stamped. See `visit.ts`. */
+  visit: VisitBaseline
   /** Index-stepped load animation. */
   delayMs: number
 }
 
-export function HighlightEntry({ entry, rank, todayLocalDate, delayMs }: HighlightEntryProps) {
+export function HighlightEntry({
+  entry,
+  rank,
+  todayLocalDate,
+  visit,
+  delayMs,
+}: HighlightEntryProps) {
   const { chips } = splitTags(entry.tags)
   const summary = summarizeShowtimes(entry.showtimes, {
     maxDays: MAX_DAYS,
@@ -56,7 +65,7 @@ export function HighlightEntry({ entry, rank, todayLocalDate, delayMs }: Highlig
           {entry.tags.map((tag) => (
             <FormatStamp key={tag} tag={tag} />
           ))}
-          {entry.isNew ? <span className="entry__new">New</span> : null}
+          {isNewToViewer(entry, visit) ? <span className="entry__new">New</span> : null}
         </div>
 
         {(meta.length > 0 || chips.length > 0) && (
