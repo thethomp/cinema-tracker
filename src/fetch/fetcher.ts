@@ -36,12 +36,17 @@ export class Fetcher {
     this.fetchImpl = options.fetchImpl ?? nodeFetch
   }
 
-  async text(url: string): Promise<string> {
-    const response = await this.request(url)
+  /**
+   * `headers` adds source-specific request headers (AMC's `X-AMC-Vendor-Key`,
+   * for one). It cannot override the identifying defaults below: an adapter
+   * that wants to send a browser User-Agent should not get one from here.
+   */
+  async text(url: string, headers?: Record<string, string>): Promise<string> {
+    const response = await this.request(url, headers)
     return response.text()
   }
 
-  private async request(url: string): Promise<Response> {
+  private async request(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
     const host = new URL(url).host
     await this.waitForSlot(host)
 
@@ -53,6 +58,7 @@ export class Fetcher {
       this.lastRequestAt.set(host, Date.now())
       const response = await this.fetchImpl(url, {
         headers: {
+          ...extraHeaders,
           'User-Agent': USER_AGENT,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',

@@ -16,7 +16,7 @@ async function sweep(): Promise<void> {
   const { db, close } = createDatabase(DB_PATH)
   try {
     const fetcher = new Fetcher()
-    const adapters = createAdapters(fetcher)
+    const adapters = createAdapters(fetcher, { amcApiKey: process.env.AMC_API_KEY })
     await seedVenues(db, allVenues(adapters))
 
     const today = DateTime.now().setZone(TZ)
