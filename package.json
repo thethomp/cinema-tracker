@@ -16,7 +16,8 @@
     "web:dev": "vite",
     "web:build": "vite build",
     "web:preview": "vite preview",
-    "dev:api": "tsx scripts/dev-api.ts"
+    "dev:api": "tsx scripts/dev-api.ts",
+    "serve": "npm run web:build && tsx src/cli.ts serve"
   },
   "repository": {
     "type": "git",

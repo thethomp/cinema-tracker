@@ -28,6 +28,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export interface AppOptions {
   /** Injected so tests are not at the mercy of the wall clock. */
   now?: () => Date
+  /**
+   * Sources this process is configured to run, added to the health report's
+   * known set. `serve.ts` passes its live adapter ids; see `HealthOptions`.
+   */
+  sources?: readonly string[]
 }
 
 /**
@@ -107,7 +112,14 @@ export function createApp(db: Db, options: AppOptions = {}) {
     return c.json({ window: { from: from.toISOString(), to: to.toISOString() }, days })
   })
 
-  app.get('/api/health', async (c) => c.json(await getHealth(db, { now: clock() })))
+  app.get('/api/health', async (c) =>
+    c.json(
+      await getHealth(db, {
+        now: clock(),
+        ...(options.sources != null ? { sources: options.sources } : {}),
+      }),
+    ),
+  )
 
   app.post('/api/visit', async (c) => {
     const current = clock().toISOString()

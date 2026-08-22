@@ -247,6 +247,23 @@ describe('GET /api/health', () => {
       close()
     }
   })
+
+  it('reports the sources the serving process says it runs', async () => {
+    // `serve.ts` knows which adapters it actually built. An adapter that has
+    // never swept has no rows to be derived from, so it has to be named.
+    const { db, close } = await emptyDb()
+    const app = createApp(db, { now, sources: ['grand-illusion'] })
+    try {
+      const res = await app.request('/api/health')
+      const body = await res.json()
+      const added = body.sources.find((s: { source: string }) => s.source === 'grand-illusion')
+      expect(added).toMatchObject({ healthy: false, reason: 'never run' })
+      // And the built-in set survives being told about a new one.
+      expect(body.sources.map((s: { source: string }) => s.source)).toContain('siff')
+    } finally {
+      close()
+    }
+  })
 })
 
 describe('POST /api/visit', () => {

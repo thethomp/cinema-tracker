@@ -37,6 +37,18 @@ export interface HealthReport {
 
 export interface HealthOptions {
   now?: Date
+  /**
+   * Sources the caller knows are configured, *added* to the known set rather
+   * than replacing it.
+   *
+   * `serve.ts` builds the adapters and so knows what this process actually
+   * runs, including any added since `KNOWN_SOURCES` was last edited. Union
+   * rather than override, because both directions hide a real fault: drop the
+   * known set and a missing AMC_API_KEY makes AMC vanish from the report
+   * instead of showing as not running; ignore the caller's list and a new
+   * adapter is invisible until its first successful sweep.
+   */
+  sources?: readonly string[]
 }
 
 /** A pure read: per-source status, when each last ran, and what is unresolved. */
@@ -47,7 +59,13 @@ export async function getHealth(db: Db, options: HealthOptions = {}): Promise<He
     .select({ source: sourceRuns.source })
     .from(sourceRuns)
     .groupBy(sourceRuns.source)
-  const names = [...new Set([...KNOWN_SOURCES, ...runRows.map((row) => row.source)])].sort()
+  const names = [
+    ...new Set([
+      ...KNOWN_SOURCES,
+      ...(options.sources ?? []),
+      ...runRows.map((row) => row.source),
+    ]),
+  ].sort()
 
   const evaluated = new Map(
     (await evaluateHealth(db, names)).map((entry) => [entry.source, entry]),

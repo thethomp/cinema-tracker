@@ -136,4 +136,41 @@ describe('getHealth', () => {
       close()
     }
   })
+  it('expects the sources the caller names, on top of the ones it already knows', async () => {
+    // `serve.ts` builds the adapters and knows which ones this process is
+    // actually configured to run. An adapter added to the codebase but never
+    // swept leaves no rows in `source_runs`, so without being told about it
+    // the report would omit it entirely -- invisible rather than unhealthy.
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, { now: NOW, sources: ['grand-illusion'] })
+      expect(health.sources.map((s) => s.source)).toEqual([
+        'amc',
+        'cinemark',
+        'grand-illusion',
+        'seattle-magic',
+        'siff',
+      ])
+      expect(health.sources.find((s) => s.source === 'grand-illusion')).toMatchObject({
+        healthy: false,
+        reason: 'never run',
+      })
+    } finally {
+      close()
+    }
+  })
+
+  it('keeps a known source listed even when the caller does not name it', async () => {
+    // The reverse hazard. If AMC_API_KEY goes missing the adapter is not
+    // built, and a report that only listed the live adapters would quietly
+    // drop AMC instead of reporting it as not running -- a misconfiguration
+    // hidden by the very view meant to surface it.
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, { now: NOW, sources: ['siff'] })
+      expect(health.sources.map((s) => s.source)).toContain('amc')
+    } finally {
+      close()
+    }
+  })
 })
