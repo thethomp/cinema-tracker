@@ -7,6 +7,7 @@ import { runSweep } from './sweep/sweep.js'
 import { evaluateHealth } from './store/runs.js'
 import { TmdbClient } from './tmdb/client.js'
 import { runResolution } from './resolve/run.js'
+import { enrichWatchedFilms } from './taste/enrich.js'
 
 const DB_PATH = process.env.DATABASE_PATH ?? 'data/cinema-tracker.db'
 const FETCH_WINDOW_DAYS = 21
@@ -66,6 +67,17 @@ async function resolve(): Promise<void> {
         console.log(`  ${entry.rawTitle} (${entry.screeningCount} screenings)`)
       }
       console.log('\nAdd a row to title_overrides to resolve one by hand.')
+    }
+
+    // The taste model reads `films`, which the pass above fills only with
+    // titles currently on sale. Without this the owner's diary joins to a
+    // dozen rows and every affinity falls under the sample floor.
+    const enriched = await enrichWatchedFilms(db, client, new Date())
+    console.log(
+      `\nWatched-film metadata: fetched ${enriched.fetched}, already held ${enriched.skipped}`,
+    )
+    for (const failure of enriched.failed) {
+      console.log(`  tmdb ${failure.tmdbId}: ${failure.error}`)
     }
   } finally {
     close()
