@@ -66,6 +66,14 @@ const TASTE_RULE_SEEDS: {
   { kind: 'venue', value: 'SIFF', weight: 15 },
   { kind: 'venue', value: 'Independent', weight: 15 },
   { kind: 'tag', value: 'IMAX', weight: 10 },
+  // A one-off programme slot: "Studio Ghibli Fest", a Q&A premiere, an
+  // anniversary event series. Deliberately under the 40 threshold — it needs a
+  // second signal to reach the feed.
+  { kind: 'tag', value: 'EVENT', weight: 30 },
+  // Milder still, and on purpose. ARTHOUSE comes from AMC Artisan Films, which
+  // is a standing programming line covering 176 live screenings rather than a
+  // one-off. Weighted to nudge, not to promote on its own.
+  { kind: 'tag', value: 'ARTHOUSE', weight: 15 },
   { kind: 'watched', value: 'seen', weight: -80 },
 ]
 
