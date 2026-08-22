@@ -4,7 +4,11 @@ export interface MastheadProps {
   /** Venue-local dates bounding the programme. */
   fromLocalDate: string
   toLocalDate: string
-  /** Most recent sweep, or null when nothing has ever run. */
+  /**
+   * Most recent sweep. Null while health is still in flight *or* when nothing
+   * has ever run -- the masthead cannot tell those apart, so it prints an em
+   * dash rather than asserting "never" at a database it has not read yet.
+   */
   lastSweepAt: string | null
   venueCount: number | null
   highlightCount: number | null
@@ -45,7 +49,7 @@ export function Masthead({
           */}
           <div>
             <dt className="label">Last swept</dt>
-            <dd className="mono">{formatAgo(lastSweepAt)}</dd>
+            <dd className="mono">{lastSweepAt == null ? '—' : formatAgo(lastSweepAt)}</dd>
           </div>
           <div>
             <dt className="label">Venues</dt>

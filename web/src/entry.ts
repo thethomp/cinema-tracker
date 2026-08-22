@@ -22,6 +22,11 @@ const TAG_LABELS: Record<string, string> = {
   MEMBER_ONLY: 'MEMBERS ONLY',
 }
 
+/** True for the four tags that earn vermilion. */
+export function isStamped(tag: string): boolean {
+  return STAMPED.includes(tag)
+}
+
 export function tagLabel(tag: string): string {
   return TAG_LABELS[tag] ?? tag.replaceAll('_', ' ')
 }
@@ -37,7 +42,7 @@ export function splitTags(tags: readonly string[]): SplitTags {
   const present = new Set(tags)
   return {
     stamps: STAMPED.filter((tag) => present.has(tag)).map(tagLabel),
-    chips: tags.filter((tag) => !STAMPED.includes(tag)).map(tagLabel),
+    chips: tags.filter((tag) => !isStamped(tag)).map(tagLabel),
   }
 }
 
@@ -116,4 +121,49 @@ export function venueSummary(venues: readonly EntryVenue[], max: number): VenueS
     named: venues.slice(0, max).map((venue) => venue.name),
     extra: Math.max(0, venues.length - max),
   }
+}
+
+/**
+ * A stable DOM id for an entry, so the special-presentations index can link
+ * into the feed.
+ *
+ * Keyed the same way the read model groups: on `film_id` when resolved, on the
+ * raw title when not. Anything else would give the Star Trek double features --
+ * which carry no `film_id` -- an id that changes between renders.
+ */
+export function entryDomId(entry: { filmId: number | null; rawTitle: string }): string {
+  if (entry.filmId != null) return `entry-film-${entry.filmId}`
+  const slug = entry.rawTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `entry-${slug || 'untitled'}`
+}
+
+/**
+ * The index of prints and one-offs.
+ *
+ * The feed is ordered by score, and score tracks reach: a watchlist title at
+ * four multiplexes outranks the only 35mm print in the city. Both orderings
+ * are right for what they are, so rather than fight the scorer the page states
+ * the rare things twice -- once here as a diary, once in the feed in rank
+ * order. Soonest first, because the question this answers is "what do I have
+ * to plan around".
+ */
+export function selectSpecialPresentations<
+  T extends { tags: string[]; showtimes: readonly EntryShowtime[] },
+>(entries: readonly T[], limit: number): T[] {
+  return entries
+    .filter((entry) => entry.tags.some(isStamped) && entry.showtimes.length > 0)
+    .map((entry) => ({
+      entry,
+      first: entry.showtimes.reduce(
+        (earliest, showtime) =>
+          showtime.startsAtUtc < earliest ? showtime.startsAtUtc : earliest,
+        entry.showtimes[0]!.startsAtUtc,
+      ),
+    }))
+    .sort((a, b) => a.first.localeCompare(b.first))
+    .slice(0, limit)
+    .map(({ entry }) => entry)
 }

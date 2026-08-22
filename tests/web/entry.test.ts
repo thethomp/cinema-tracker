@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { EntryShowtime } from '../../web/src/api'
-import { splitTags, summarizeShowtimes, venueSummary } from '../../web/src/entry'
+import type { EntryShowtime, FilmEntry } from '../../web/src/api'
+import {
+  entryDomId,
+  selectSpecialPresentations,
+  splitTags,
+  summarizeShowtimes,
+  venueSummary,
+} from '../../web/src/entry'
 
 function showtime(id: number, localDate: string, hour: number, venueId = 'siff-uptown'): EntryShowtime {
   return {
@@ -93,5 +99,88 @@ describe('venueSummary', () => {
       named: ['SIFF Cinema Uptown', 'AMC Pacific Place 11'],
       extra: 0,
     })
+  })
+})
+
+function entryOf(partial: Partial<FilmEntry> & { title: string }): FilmEntry {
+  return {
+    filmId: null,
+    rawTitle: partial.title,
+    score: 0,
+    reasons: [],
+    tags: [],
+    venues: [],
+    showtimes: [],
+    firstSeenAt: '2026-08-01T00:00:00.000Z',
+    isNew: false,
+    ...partial,
+  }
+}
+
+describe('selectSpecialPresentations', () => {
+  const odyssey = entryOf({
+    title: 'The Odyssey',
+    filmId: 1,
+    tags: ['70MM', 'ARTHOUSE'],
+    showtimes: [showtime(1, '2026-08-23', 3)],
+  })
+  const goldeneye = entryOf({
+    title: 'GoldenEye',
+    filmId: 2,
+    tags: ['35MM'],
+    showtimes: [showtime(2, '2026-08-29', 3)],
+  })
+  const uprising = entryOf({
+    title: 'The Uprising',
+    filmId: 3,
+    tags: ['Q_AND_A', 'EVENT'],
+    showtimes: [showtime(3, '2026-08-22', 3)],
+  })
+  const lalaland = entryOf({
+    title: 'La La Land',
+    filmId: 4,
+    tags: ['ANNIVERSARY', 'EVENT', 'DOLBY'],
+    showtimes: [showtime(4, '2026-08-22', 1)],
+  })
+
+  it('picks only entries carrying a stamped format', () => {
+    const picked = selectSpecialPresentations([lalaland, odyssey, goldeneye, uprising], 10)
+    expect(picked.map((entry) => entry.title)).toEqual([
+      'The Uprising',
+      'The Odyssey',
+      'GoldenEye',
+    ])
+  })
+
+  it('reads as a diary: soonest first, not highest-scoring first', () => {
+    const picked = selectSpecialPresentations([goldeneye, odyssey, uprising], 10)
+    expect(picked.map((entry) => entry.title)).toEqual([
+      'The Uprising',
+      'The Odyssey',
+      'GoldenEye',
+    ])
+  })
+
+  it('respects the cap', () => {
+    expect(selectSpecialPresentations([odyssey, goldeneye, uprising], 2)).toHaveLength(2)
+  })
+
+  it('drops an entry whose stamped tag has no showtime left to sort by', () => {
+    const orphan = entryOf({ title: 'Orphan', filmId: 9, tags: ['70MM'], showtimes: [] })
+    expect(selectSpecialPresentations([orphan, odyssey], 10).map((e) => e.title)).toEqual([
+      'The Odyssey',
+    ])
+  })
+})
+
+describe('entryDomId', () => {
+  it('keys on the film when resolved', () => {
+    expect(entryDomId({ filmId: 12, rawTitle: 'The Odyssey (70mm)' })).toBe('entry-film-12')
+  })
+
+  it('falls back to a slug of the raw title, which is how unresolved rows group', () => {
+    expect(
+      entryDomId({ filmId: null, rawTitle: 'Star Trek Double Feature — 60th Anniversary!' }),
+    ).toBe('entry-star-trek-double-feature-60th-anniversary')
   })
 })

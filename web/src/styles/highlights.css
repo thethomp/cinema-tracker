@@ -44,6 +44,7 @@
   padding: 1.15rem 0 1.3rem;
   border-bottom: var(--rule);
   position: relative;
+  scroll-margin-top: 1.5rem;
 }
 
 .entry__margin {
@@ -376,5 +377,118 @@
 
   .entry__day-label {
     flex-basis: 3.75rem;
+  }
+}
+
+/* ---- prints & one-offs index -------------------------------------------- */
+
+.specials {
+  margin-bottom: 0.5rem;
+}
+
+.section-head--tight {
+  margin-top: 2rem;
+  padding-bottom: 0.35rem;
+}
+
+.section-head__title--small {
+  font-size: 1.125rem;
+  letter-spacing: 0.05em;
+}
+
+.specials__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--rule);
+}
+
+/*
+ * A ruled table, not cards. Four columns: stamp, film, house, next time --
+ * the four things that decide whether an evening gets rearranged.
+ */
+.specials__row {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr) minmax(0, 13rem) 9.25rem;
+  align-items: baseline;
+  column-gap: 1rem;
+  padding: 0.5rem 0.4rem;
+  border-bottom: var(--rule);
+}
+
+.specials__row:nth-child(odd) {
+  background: color-mix(in srgb, var(--paper-sunk) 55%, transparent);
+}
+
+.specials__stamp {
+  display: inline-flex;
+  justify-content: flex-start;
+}
+
+.specials__title {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 1.0625rem;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.specials__title:hover,
+.specials__title:focus-visible {
+  border-bottom-color: var(--ink);
+}
+
+.specials__venue {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.specials__when {
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.specials__time {
+  color: var(--ink);
+  letter-spacing: 0;
+  margin-left: 0.6rem;
+}
+
+@media (max-width: 640px) {
+  /* Two rows rather than four columns: stamp and time on top, film and
+     house beneath. */
+  .specials__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.15rem;
+    padding: 0.6rem 0.5rem;
+  }
+
+  .specials__stamp {
+    order: 1;
+  }
+
+  .specials__when {
+    order: 2;
+  }
+
+  .specials__title {
+    order: 3;
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .specials__venue {
+    order: 4;
+    grid-column: 1 / -1;
   }
 }

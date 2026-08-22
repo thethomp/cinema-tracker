@@ -156,6 +156,18 @@ export async function fetchAgenda(query: AgendaQuery): Promise<AgendaDay[]> {
   return body.days
 }
 
+export interface Venue {
+  id: string
+  name: string
+  chain: string
+  timezone: string
+}
+
+export async function fetchVenues(): Promise<Venue[]> {
+  const body = await request<{ venues: Venue[] }>('/api/venues')
+  return body.venues
+}
+
 export function fetchHealth(): Promise<HealthReport> {
   return request<HealthReport>('/api/health')
 }
