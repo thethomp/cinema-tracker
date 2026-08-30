@@ -1,0 +1,10 @@
+{
+    "errors": [
+        {
+            "id": "ccca1468-0d32-40bf-a2ab-cabe9092bfe6",
+            "code": 5217,
+            "exceptionMessage": "No showtimes found.",
+            "message": "Sorry, no showtimes found. Please check another AMC near you, or check this theatre again soon!  Showtimes for Friday and beyond are usually posted by Wednesday afternoon.  There may be changes or delays in showtime postings. Please select another date above to see showtimes for this theatre."
+        }
+    ]
+}

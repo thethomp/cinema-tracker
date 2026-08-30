@@ -19,6 +19,30 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504])
 /** Ceiling on an honored `Retry-After` wait, so a hostile value can't hang a sweep. */
 const MAX_RETRY_AFTER_MS = 60_000
 
+/**
+ * A non-OK HTTP response, with its body attached.
+ *
+ * The body is the point. AMC answers a date with no showtimes with a 404 whose
+ * body says *which kind* of 404 it is -- code 5217 "No showtimes found." for a
+ * day with nothing scheduled, code 5108 "Theatre N not found." for a bad
+ * theatre id, and an empty body for a malformed date. A caller handed only
+ * "failed: 404" cannot tell an empty Tuesday from a mistyped theatre, and
+ * guessing between those two is the difference between a correct sweep and a
+ * source that reports "no showtimes" forever while looking perfectly healthy.
+ *
+ * The message is unchanged, so anything matching on it still matches.
+ */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly url: string,
+    readonly body: string,
+  ) {
+    super(`GET ${url} failed: ${status}`)
+    this.name = 'HttpError'
+  }
+}
+
 export class Fetcher {
   private readonly minIntervalMs: number
   private readonly maxRetries: number
@@ -67,10 +91,14 @@ export class Fetcher {
 
       if (response.ok) return response
 
+      // Read before anything else touches the response: a body can only be
+      // consumed once, and it is what tells one 404 from another.
+      const body = await response.text().catch(() => '')
+
       if (!RETRYABLE.has(response.status)) {
-        throw new Error(`GET ${url} failed: ${response.status}`)
+        throw new HttpError(response.status, url, body)
       }
-      lastError = new Error(`GET ${url} failed: ${response.status}`)
+      lastError = new HttpError(response.status, url, body)
       nextDelayMs = retryDelayFor(response, this.retryDelayMs, attempt + 1)
     }
     throw lastError ?? new Error(`GET ${url} failed`)
