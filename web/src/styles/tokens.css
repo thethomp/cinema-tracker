@@ -14,13 +14,13 @@
   --paper-sunk: #ebe7dd;
   --ink: #151310;
   --ink-soft: #55504733;
-  --ink-muted: #6b6459;
+  --ink-muted: #574F42;
   --accent: #d6482b;
   --accent-sunk: #a8351c;
   --gold: #9a7b3f;
 
   --serif: 'Bodoni Moda', 'Didot', 'Bodoni MT', Georgia, serif;
-  --sans: 'Archivo Narrow', 'Helvetica Neue Condensed', 'Arial Narrow', sans-serif;
+  --sans: 'Archivo', 'Helvetica Neue', Helvetica, sans-serif;
   --mono: 'IBM Plex Mono', 'SFMono-Regular', 'Courier New', monospace;
 
   /* The printed page. Wider than a blog, narrower than a dashboard. */
