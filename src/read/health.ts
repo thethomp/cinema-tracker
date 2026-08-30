@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, desc } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
+import type { UnconfiguredSource } from '../core/types.js'
 import { screenings, sourceRuns } from '../db/schema.js'
 import { evaluateHealth } from '../store/runs.js'
 
@@ -49,11 +50,26 @@ export interface HealthOptions {
    * adapter is invisible until its first successful sweep.
    */
   sources?: readonly string[]
+  /**
+   * Integrations that cannot run at all because their configuration is absent.
+   *
+   * Added to the list and given the last word over any run history behind
+   * them. `createAdapters` drops AMC without a vendor key and the resolve pass
+   * is skipped without a TMDB token; both are correct, and both used to be
+   * invisible here. A row reading "not configured: AMC_API_KEY is not set" is
+   * strictly better than a source that vanishes -- and better than "stale:
+   * last ran 7 days ago", which is true but leads the reader nowhere.
+   */
+  unconfigured?: readonly UnconfiguredSource[]
 }
 
 /** A pure read: per-source status, when each last ran, and what is unresolved. */
 export async function getHealth(db: Db, options: HealthOptions = {}): Promise<HealthReport> {
   const now = options.now ?? new Date()
+
+  const unconfigured = new Map(
+    (options.unconfigured ?? []).map((entry) => [entry.source, entry.variable]),
+  )
 
   const runRows = await db
     .select({ source: sourceRuns.source })
@@ -63,12 +79,15 @@ export async function getHealth(db: Db, options: HealthOptions = {}): Promise<He
     ...new Set([
       ...KNOWN_SOURCES,
       ...(options.sources ?? []),
+      ...unconfigured.keys(),
       ...runRows.map((row) => row.source),
     ]),
   ].sort()
 
+  // The same clock the unresolved count uses, so a report cannot say a source
+  // is fresh and its rows are stale in the same breath.
   const evaluated = new Map(
-    (await evaluateHealth(db, names)).map((entry) => [entry.source, entry]),
+    (await evaluateHealth(db, names, { now })).map((entry) => [entry.source, entry]),
   )
 
   const sources: SourceStatus[] = []
@@ -86,10 +105,20 @@ export async function getHealth(db: Db, options: HealthOptions = {}): Promise<He
     const startedAt = latest ? latest.startedAt.toISOString() : null
     if (startedAt != null && (lastRunAt == null || startedAt > lastRunAt)) lastRunAt = startedAt
 
+    // A missing key outranks whatever the run history says. "stale: last ran 7
+    // days ago" is true of a de-configured AMC and tells the reader nothing
+    // they can act on; the name of the variable does. The run figures stay on
+    // the row regardless, because when it last worked is still worth seeing.
+    const missing = unconfigured.get(source)
+
     sources.push({
       source,
-      healthy: verdict?.healthy ?? false,
-      ...(verdict?.reason != null ? { reason: verdict.reason } : {}),
+      healthy: missing != null ? false : (verdict?.healthy ?? false),
+      ...(missing != null
+        ? { reason: `not configured: ${missing} is not set` }
+        : verdict?.reason != null
+          ? { reason: verdict.reason }
+          : {}),
       lastRunAt: startedAt,
       lastStatus: latest?.status ?? null,
       itemCount: latest?.itemCount ?? null,

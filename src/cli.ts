@@ -1,12 +1,21 @@
+import { loadEnv } from './config/env.js'
 import { createDatabase } from './db/client.js'
-import { Fetcher } from './fetch/fetcher.js'
-import { resolvePass, scorePass, sweepPass } from './pipeline/passes.js'
-import { syncLetterboxd } from './letterboxd/sync.js'
+import { resolvePass, scorePass, sweepPass, syncPass } from './pipeline/passes.js'
 import { startServer } from './server/serve.js'
 import { HIGHLIGHT_THRESHOLD } from './score/score.js'
 
+/*
+ * First, before anything reads `process.env`.
+ *
+ * Every command below is configured entirely by environment variables, and
+ * until this call existed none of them loaded `.env` -- so each one worked
+ * only after the operator ran `set -a; . ./.env; set +a` by hand, and quietly
+ * did less than it claimed when they forgot. Real environment variables still
+ * win; see `loadEnv`.
+ */
+loadEnv()
+
 const DB_PATH = process.env.DATABASE_PATH ?? 'data/cinema-tracker.db'
-const LETTERBOXD_CSV_DIR = process.env.LETTERBOXD_CSV_DIR ?? 'data/letterboxd'
 
 async function sweep(): Promise<void> {
   const { db, close } = createDatabase(DB_PATH)
@@ -124,12 +133,13 @@ async function sync(): Promise<void> {
 
   const { db, close } = createDatabase(DB_PATH)
   try {
-    const result = await syncLetterboxd(
-      db,
-      new Fetcher(),
-      { username, csvDir: LETTERBOXD_CSV_DIR },
-      new Date(),
-    )
+    // The same pass the scheduler runs, not a second copy of it. This command
+    // and `npm run serve` used to reach Letterboxd by different routes, and
+    // only one of the two routes existed in the scheduler at all.
+    const result = await syncPass(db, {
+      username,
+      ...(process.env.LETTERBOXD_CSV_DIR ? { csvDir: process.env.LETTERBOXD_CSV_DIR } : {}),
+    })
 
     if (result.status === 'failed') {
       console.error(`Letterboxd sync failed: ${result.error}`)

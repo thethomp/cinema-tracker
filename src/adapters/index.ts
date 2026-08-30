@@ -1,4 +1,4 @@
-import type { VenueAdapter, VenueRef } from '../core/types.js'
+import type { UnconfiguredSource, VenueAdapter, VenueRef } from '../core/types.js'
 import type { Fetcher } from '../fetch/fetcher.js'
 import { AmcClient } from '../amc/client.js'
 import { createSiffAdapter } from './siff.js'
@@ -25,6 +25,19 @@ export function createAdapters(fetcher: Fetcher, options: AdapterOptions = {}): 
   }
 
   return adapters
+}
+
+/**
+ * The adapters `createAdapters` will *not* build, and why.
+ *
+ * Deliberately derived from the same options, and kept beside the omission it
+ * describes, so the two cannot drift: an adapter that is built but reported
+ * missing, or missing but reported built, is worse than either fact alone.
+ * Callers feed this to the health report, where "not configured: AMC_API_KEY
+ * is not set" appears in place of nothing at all.
+ */
+export function unconfiguredAdapters(options: AdapterOptions = {}): UnconfiguredSource[] {
+  return options.amcApiKey ? [] : [{ source: 'amc', variable: 'AMC_API_KEY' }]
 }
 
 export function allVenues(adapters: VenueAdapter[]): VenueRef[] {

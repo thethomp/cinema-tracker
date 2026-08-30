@@ -35,16 +35,16 @@ describe('getHealth', () => {
       for (const source of ['siff', 'cinemark', 'seattle-magic', 'amc']) {
         await recordRun(db, {
           source,
-          startedAt: AT('2026-08-22T06:00:00Z'),
-          finishedAt: AT('2026-08-22T06:02:00Z'),
+          startedAt: AT('2026-08-22T14:00:00Z'),
+          finishedAt: AT('2026-08-22T14:02:00Z'),
           status: 'ok',
           itemCount: 400,
         })
       }
       await recordRun(db, {
         source: 'cinemark',
-        startedAt: AT('2026-08-22T12:00:00Z'),
-        finishedAt: AT('2026-08-22T12:00:05Z'),
+        startedAt: AT('2026-08-22T16:00:00Z'),
+        finishedAt: AT('2026-08-22T16:00:05Z'),
         status: 'failed',
         itemCount: 0,
         error: 'GET https://www.cinemark.com/... failed: 503',
@@ -54,7 +54,7 @@ describe('getHealth', () => {
       const byName = new Map(health.sources.map((s) => [s.source, s]))
 
       expect(byName.get('siff')!.healthy).toBe(true)
-      expect(byName.get('siff')!.lastRunAt).toBe('2026-08-22T06:00:00.000Z')
+      expect(byName.get('siff')!.lastRunAt).toBe('2026-08-22T14:00:00.000Z')
       expect(byName.get('siff')!.lastStatus).toBe('ok')
       expect(byName.get('siff')!.itemCount).toBe(400)
 
@@ -62,11 +62,11 @@ describe('getHealth', () => {
       expect(byName.get('cinemark')!.reason).toBe(
         'last run failed: GET https://www.cinemark.com/... failed: 503',
       )
-      expect(byName.get('cinemark')!.lastRunAt).toBe('2026-08-22T12:00:00.000Z')
+      expect(byName.get('cinemark')!.lastRunAt).toBe('2026-08-22T16:00:00.000Z')
       expect(byName.get('cinemark')!.lastStatus).toBe('failed')
 
       expect(health.healthy).toBe(false)
-      expect(health.lastRunAt).toBe('2026-08-22T12:00:00.000Z')
+      expect(health.lastRunAt).toBe('2026-08-22T16:00:00.000Z')
     } finally {
       close()
     }
@@ -77,14 +77,45 @@ describe('getHealth', () => {
     try {
       await recordRun(db, {
         source: 'letterboxd',
-        startedAt: AT('2026-08-22T05:00:00Z'),
-        finishedAt: AT('2026-08-22T05:00:10Z'),
+        startedAt: AT('2026-08-22T14:00:00Z'),
+        finishedAt: AT('2026-08-22T14:00:10Z'),
         status: 'ok',
         itemCount: 285,
       })
       const health = await getHealth(db, { now: NOW })
       expect(health.sources.map((s) => s.source)).toContain('letterboxd')
       expect(health.sources.find((s) => s.source === 'letterboxd')!.healthy).toBe(true)
+    } finally {
+      close()
+    }
+  })
+
+  it('reports a source that has stopped running as unhealthy, not as its last success', async () => {
+    /*
+     * The live failure this check exists for. AMC last swept successfully on
+     * the 22nd and then its key went missing, so nothing ran for a week. Every
+     * other check here reads a successful run and says "fine"; only asking
+     * *when* it ran tells the truth, and the reason has to carry the interval
+     * or the reader cannot tell a blip from an outage.
+     */
+    const { db, close } = await emptyDb()
+    try {
+      await recordRun(db, {
+        source: 'amc',
+        startedAt: AT('2026-08-15T18:00:00Z'),
+        finishedAt: AT('2026-08-15T18:04:00Z'),
+        status: 'ok',
+        itemCount: 1262,
+      })
+
+      const health = await getHealth(db, { now: NOW })
+      const amc = health.sources.find((s) => s.source === 'amc')!
+      expect(amc.healthy).toBe(false)
+      expect(amc.reason).toBe('stale: last ran 7 days ago')
+      // The successful run is still reported -- the reader needs to see both.
+      expect(amc.lastStatus).toBe('ok')
+      expect(amc.itemCount).toBe(1262)
+      expect(health.healthy).toBe(false)
     } finally {
       close()
     }
@@ -154,6 +185,89 @@ describe('getHealth', () => {
       expect(health.sources.find((s) => s.source === 'grand-illusion')).toMatchObject({
         healthy: false,
         reason: 'never run',
+      })
+    } finally {
+      close()
+    }
+  })
+
+  it('reports an unconfigured source as unhealthy, naming the variable', async () => {
+    /*
+     * `createAdapters` drops AMC when its vendor key is absent, which is the
+     * right thing to do and the wrong thing to do silently. Vanishing is the
+     * one outcome this report exists to prevent: an entry saying why AMC is
+     * not running is strictly better than no entry at all.
+     */
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'amc', variable: 'AMC_API_KEY' }],
+      })
+      expect(health.sources.find((s) => s.source === 'amc')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: AMC_API_KEY is not set',
+      })
+      expect(health.healthy).toBe(false)
+    } finally {
+      close()
+    }
+  })
+
+  it('prefers the missing key over the run history behind it', async () => {
+    // AMC's newest row is a week-old success. "stale: last ran 7 days ago" is
+    // true but leads nowhere; "AMC_API_KEY is not set" is the actionable fact,
+    // so it wins. The run figures stay on the row either way.
+    const { db, close } = await emptyDb()
+    try {
+      await recordRun(db, {
+        source: 'amc',
+        startedAt: AT('2026-08-15T18:00:00Z'),
+        finishedAt: AT('2026-08-15T18:04:00Z'),
+        status: 'ok',
+        itemCount: 1262,
+      })
+
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'amc', variable: 'AMC_API_KEY' }],
+      })
+      expect(health.sources.find((s) => s.source === 'amc')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: AMC_API_KEY is not set',
+        lastRunAt: '2026-08-15T18:00:00.000Z',
+        lastStatus: 'ok',
+        itemCount: 1262,
+      })
+    } finally {
+      close()
+    }
+  })
+
+  it('lists a pass that is not a swept source at all', async () => {
+    // The resolve pass writes no source_runs rows, so it is invisible to every
+    // other path into this report. Without a key it does not run, films go
+    // unlinked, and until now the only trace was a console.warn in a server
+    // log nobody reads. It appears here only when it cannot run.
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'resolve', variable: 'TMDB_API_KEY' }],
+      })
+      expect(health.sources.map((s) => s.source)).toEqual([
+        'amc',
+        'cinemark',
+        'resolve',
+        'seattle-magic',
+        'siff',
+      ])
+      expect(health.sources.find((s) => s.source === 'resolve')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: TMDB_API_KEY is not set',
+        lastRunAt: null,
+        lastStatus: null,
+        itemCount: null,
       })
     } finally {
       close()

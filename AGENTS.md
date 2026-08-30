@@ -28,15 +28,19 @@ npm test                  # should be all green before you change anything
 | `npm test` | Full Vitest suite. No network access. |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run sweep` | Fetch showtimes from all venues into SQLite. Hits live sites. |
+| `npm run sync` | Pull the Letterboxd diary and watchlist into SQLite. Hits letterboxd.com. Needs `LETTERBOXD_USERNAME`. |
 | `npm run resolve` | Resolve unresolved raw titles against TMDB, and fetch metadata for rated Letterboxd films. Hits live API. |
 | `npm run score` | Recompute taste affinities, tag and score every future screening, print the top highlights. No network. |
-| `npm run serve` | Build the UI and serve it with the API on :8787, sweeping every 6 hours. Add `--no-sweep` to serve without the passes. |
+| `npm run serve` | Build the UI and serve it with the API on :8787, running all four passes every 6 hours. Add `--no-sweep` to serve without them. |
 
 `npm run sweep` takes a few minutes — the fetch layer allows one request per host
 every 2 seconds by design. **Don't run two full sweeps back to back**; Cinemark
 rate-limits at roughly 88 requests inside four minutes.
 
-`npm run serve` runs the same passes on a 6-hour timer. It records each run in
+`npm run serve` runs the same passes on a 6-hour timer, in order: sweep, sync,
+resolve, score. The sync runs *before* resolve because it introduces new
+watchlist films and newly rated diary entries, and resolve is what attaches
+TMDB metadata to them. It records each run in
 `app_state.last_pipeline_run_at`, and falls back to the newest `source_runs` row
 when that key is absent, so restarting the server does **not** re-sweep.
 
@@ -49,6 +53,7 @@ venue sites/APIs → adapters → normalize → SQLite → resolve → score →
 | Path | Responsibility |
 |---|---|
 | `src/core/` | Shared types and time math. No I/O. |
+| `src/config/` | `.env` parsing and loading. Pure parser, thin loader. |
 | `src/fetch/` | The only place that makes HTTP requests. Rate limiting lives here. |
 | `src/adapters/` | One module per venue source. |
 | `src/tmdb/` | TMDB HTTP client. No matching logic. |
@@ -140,8 +145,12 @@ trusting the selectors.
 
 ## Secrets
 
-`.env` is gitignored and holds `TMDB_API_KEY` and `AMC_API_KEY`. Load with
-`set -a; . ./.env; set +a`.
+`.env` is gitignored and holds `TMDB_API_KEY`, `AMC_API_KEY` and
+`LETTERBOXD_USERNAME`. **Every entry point loads it for you** — `src/cli.ts` and
+`scripts/dev-api.ts` call `loadEnv()` (see `src/config/env.ts`) before anything
+reads `process.env`, so `npm run serve` and friends just work. A missing `.env`
+is a no-op, and a variable already set in the real environment always wins over
+the file.
 
 **Never print a key value, echo it into logs, or paste it into a commit,
 a test fixture, or a chat message.** Report presence and length instead.

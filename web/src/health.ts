@@ -14,6 +14,9 @@ const NAMES: Record<string, string> = {
   cinemark: 'Cinemark',
   'seattle-magic': 'Seattle Magic',
   letterboxd: 'Letterboxd',
+  // Not a venue. It shows up only when TMDB_API_KEY is missing, and "Resolve"
+  // in a list of cinema chains reads like somewhere you could buy a ticket.
+  resolve: 'Film resolution',
 }
 
 /**

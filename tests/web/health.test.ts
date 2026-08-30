@@ -27,6 +27,12 @@ describe('sourceLabel', () => {
     expect(sourceLabel('seattle-magic')).toBe('Seattle Magic')
   })
 
+  it('spells the resolve pass as a person would', () => {
+    // It appears in the report only when TMDB_API_KEY is missing, and
+    // "Resolve" in a list of cinema chains reads like a venue nobody knows.
+    expect(sourceLabel('resolve')).toBe('Film resolution')
+  })
+
   it('title-cases an id it has never seen rather than printing the slug', () => {
     // A newly added adapter must still read as a name in the notice.
     expect(sourceLabel('grand-illusion')).toBe('Grand Illusion')

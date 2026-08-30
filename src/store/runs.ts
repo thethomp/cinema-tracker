@@ -26,6 +26,24 @@ const DROP_RATIO = 0.5
 /** Number of prior successful runs used to compute the baseline. */
 const BASELINE_WINDOW = 7
 
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+/**
+ * How long a source may go without running before it counts as unhealthy.
+ *
+ * Twelve hours, against a scheduler that runs the passes every six. That is
+ * exactly two missed cycles, which is deliberate: one skipped or overrunning
+ * pass -- a slow sweep, a restart, a laptop asleep for an afternoon -- must not
+ * raise an alarm, and two in a row must.
+ *
+ * This check is the whole point of the module. AMC stopped being swept for
+ * seven days when its key went missing, and because its last recorded run was
+ * a *success*, every other check here read it as healthy. Silence is not
+ * health, and a verdict that never asks *when* cannot tell them apart.
+ */
+export const STALE_AFTER_MS = 12 * HOUR_MS
+
 export async function recordRun(db: Db, record: RunRecord): Promise<void> {
   await db.insert(sourceRuns).values({
     source: record.source,
@@ -37,7 +55,17 @@ export async function recordRun(db: Db, record: RunRecord): Promise<void> {
   })
 }
 
-export async function evaluateHealth(db: Db, sources: string[]): Promise<SourceHealth[]> {
+export interface EvaluateHealthOptions {
+  /** Injected so a verdict is not at the mercy of the wall clock. */
+  now?: Date
+}
+
+export async function evaluateHealth(
+  db: Db,
+  sources: string[],
+  options: EvaluateHealthOptions = {},
+): Promise<SourceHealth[]> {
+  const now = options.now ?? new Date()
   const health: SourceHealth[] = []
 
   for (const source of sources) {
@@ -63,6 +91,20 @@ export async function evaluateHealth(db: Db, sources: string[]): Promise<SourceH
       continue
     }
 
+    /*
+     * Order matters: never-run, failed, stale, count-drop. Why a source
+     * stopped is more actionable than how long it has been stopped, so a
+     * recorded failure outranks the silence that followed it.
+     */
+    const age = now.getTime() - latest.startedAt.getTime()
+    if (age > STALE_AFTER_MS) {
+      health.push({ source, healthy: false, reason: `stale: last ran ${describeAge(age)} ago` })
+      continue
+    }
+
+    // Checked after staleness on purpose: the exemption is about a source
+    // being allowed to report *zero events*, not about it being allowed to
+    // stop reporting.
     if (COUNT_CHECK_EXEMPT.has(source)) {
       health.push({ source, healthy: true })
       continue
@@ -87,6 +129,17 @@ export async function evaluateHealth(db: Db, sources: string[]): Promise<SourceH
   }
 
   return health
+}
+
+/** "7 days", "12 hours", "40 minutes" -- whole units, floored, never bare ms. */
+function describeAge(ms: number): string {
+  if (ms >= DAY_MS) return plural(Math.floor(ms / DAY_MS), 'day')
+  if (ms >= HOUR_MS) return plural(Math.floor(ms / HOUR_MS), 'hour')
+  return plural(Math.floor(ms / (60 * 1000)), 'minute')
+}
+
+function plural(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'}`
 }
 
 function median(values: number[]): number {

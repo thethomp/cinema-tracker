@@ -14,7 +14,14 @@ import { desc, eq } from 'drizzle-orm'
 import { createDatabase, type Db } from '../db/client.js'
 import { appState, sourceRuns } from '../db/schema.js'
 import { createScheduler } from '../schedule/scheduler.js'
-import { configuredSourceIds, resolvePass, scorePass, sweepPass } from '../pipeline/passes.js'
+import {
+  configuredSourceIds,
+  resolvePass,
+  scorePass,
+  sweepPass,
+  syncPass,
+  unconfiguredIntegrations,
+} from '../pipeline/passes.js'
 import { createApp } from './app.js'
 
 const DEFAULT_PORT = 8787
@@ -63,12 +70,39 @@ export async function writeLastRunAt(db: Db, at: Date): Promise<void> {
 export interface PipelineConfig {
   amcApiKey?: string
   tmdbApiKey?: string
+  letterboxdUsername?: string
+  /** An unzipped Letterboxd export. Absent falls back to the shared default. */
+  letterboxdCsvDir?: string
 }
 
 /**
- * Sweep, then resolve, then score. Strictly in order — resolve has nothing to
+ * The pipeline configuration this process's environment describes.
+ *
+ * Named, exported and tested rather than inlined into `startServer`, because
+ * this mapping is where the silent degradations on this branch have lived: a
+ * variable the operator set in `.env` that nothing here read is invisible, and
+ * an integration that goes unconfigured is only reported because a key is
+ * *absent* from what this returns. `LETTERBOXD_USERNAME` was set for months
+ * while the scheduler had no use for it at all.
+ */
+export function pipelineConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PipelineConfig {
+  return {
+    ...(env.AMC_API_KEY ? { amcApiKey: env.AMC_API_KEY } : {}),
+    ...(env.TMDB_API_KEY ? { tmdbApiKey: env.TMDB_API_KEY } : {}),
+    ...(env.LETTERBOXD_USERNAME ? { letterboxdUsername: env.LETTERBOXD_USERNAME } : {}),
+    ...(env.LETTERBOXD_CSV_DIR ? { letterboxdCsvDir: env.LETTERBOXD_CSV_DIR } : {}),
+  }
+}
+
+/**
+ * Sweep, sync, resolve, score. Strictly in order — resolve has nothing to
  * match until the sweep has stored raw titles, and score has nothing to weigh
  * until resolve has attached films to them.
+ *
+ * The sync sits ahead of the resolve for the same reason: it introduces new
+ * watchlist films and newly rated diary entries, and resolve is what gives
+ * them TMDB metadata. Behind it, a whole cycle's worth of new entries would
+ * sit unenriched until six hours later.
  */
 export async function runPipeline(db: Db, config: PipelineConfig): Promise<void> {
   const startedAt = new Date()
@@ -82,6 +116,33 @@ export async function runPipeline(db: Db, config: PipelineConfig): Promise<void>
       console.warn(`  unhealthy: ${entry.source} — ${entry.reason}`)
     }
 
+    if (config.letterboxdUsername) {
+      /*
+       * Deliberately not wrapped in a try. `syncPass` cannot throw: it returns
+       * a failed result and records its own `source_runs` row, so a Letterboxd
+       * outage is reported and the resolve and the score still run. A guard
+       * here would only be able to make that worse.
+       */
+      const synced = await syncPass(db, {
+        username: config.letterboxdUsername,
+        ...(config.letterboxdCsvDir ? { csvDir: config.letterboxdCsvDir } : {}),
+        now: new Date(),
+      })
+      if (synced.status === 'failed') {
+        console.warn(`  sync letterboxd: failed — ${synced.error}`)
+      } else {
+        console.log(
+          `  sync letterboxd: ${synced.diaryEntries} diary entries, ` +
+            `${synced.watchlistEntries} watchlist films (${synced.pagesFetched} pages)`,
+        )
+      }
+    } else {
+      // Same shape as the resolve skip below, and for the same reason: the
+      // console line is only half of it. `unconfiguredIntegrations` puts the
+      // missing variable in the health report, where it is actually seen.
+      console.warn('  sync letterboxd: skipped — LETTERBOXD_USERNAME is not set')
+    }
+
     if (config.tmdbApiKey) {
       const resolved = await resolvePass(db, config.tmdbApiKey, { now: new Date() })
       console.log(
@@ -89,9 +150,22 @@ export async function runPipeline(db: Db, config: PipelineConfig): Promise<void>
           `${resolved.resolution.screeningsLinked} screenings linked, ` +
           `${resolved.resolution.unresolved.length} still unmatched`,
       )
+      // The diary backfill and the watched-film enrichment are the half of
+      // this pass the taste model depends on, and they were happening here
+      // unreported: the CLI prints both and the scheduler printed neither, so
+      // the log could not tell a backfill that matched nothing from one that
+      // never ran.
+      console.log(
+        `  taste: ${resolved.backfill.resolved} diary entries matched, ` +
+          `${resolved.backfill.unresolved.length} unmatched; ` +
+          `${resolved.enrichment.fetched} films fetched, ` +
+          `${resolved.enrichment.skipped} already held`,
+      )
     } else {
       // Loud, and then carry on. Scoring stale film data still beats a server
-      // that refuses to sweep because one key is missing.
+      // that refuses to sweep because one key is missing. The console is only
+      // half of it: `unconfiguredIntegrations` puts the same fact in the
+      // health report, where the owner will actually see it.
       console.warn('  resolve: skipped — TMDB_API_KEY is not set')
     }
 
@@ -122,10 +196,7 @@ export async function startServer(options: ServeOptions = {}): Promise<void> {
   const port = options.port ?? Number(process.env.PORT ?? DEFAULT_PORT)
   const dbPath = options.dbPath ?? process.env.DATABASE_PATH ?? DEFAULT_DB_PATH
   const webDist = options.webDist ?? process.env.WEB_DIST ?? DEFAULT_WEB_DIST
-  const config: PipelineConfig = {
-    ...(process.env.AMC_API_KEY ? { amcApiKey: process.env.AMC_API_KEY } : {}),
-    ...(process.env.TMDB_API_KEY ? { tmdbApiKey: process.env.TMDB_API_KEY } : {}),
-  }
+  const config = pipelineConfigFromEnv()
 
   const { db, close } = createDatabase(dbPath)
   const indexPath = path.resolve(process.cwd(), webDist, 'index.html')
@@ -134,7 +205,22 @@ export async function startServer(options: ServeOptions = {}): Promise<void> {
     console.warn(`No built UI at ${indexPath}. Run 'npm run web:build'. The API still serves.`)
   }
 
-  const api = createApp(db, { sources: configuredSourceIds(config) })
+  /*
+   * What this process can and cannot do, told to the API together.
+   *
+   * A key that is absent used to disappear twice over: `createAdapters`
+   * omitted the AMC adapter without a word, and the resolve pass warned to a
+   * console nobody watches. Neither reached the health view. Both are startup
+   * facts, so they are computed once here and reported for the life of the
+   * process -- unhealthy, named, and not fatal. The server still starts and
+   * still sweeps what it can.
+   */
+  const unconfigured = unconfiguredIntegrations(config)
+  for (const entry of unconfigured) {
+    console.warn(`Not configured: ${entry.variable} is not set — ${entry.source} will not run.`)
+  }
+
+  const api = createApp(db, { sources: configuredSourceIds(config), unconfigured })
   const app = new Hono()
 
   // The whole /api namespace is handed to the API app rather than merged into

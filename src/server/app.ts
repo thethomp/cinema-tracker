@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { asc } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import type { Db } from '../db/client.js'
+import type { UnconfiguredSource } from '../core/types.js'
 import { appState, venues } from '../db/schema.js'
 import { getAgenda } from '../read/agenda.js'
 import { getHealth } from '../read/health.js'
@@ -33,6 +34,12 @@ export interface AppOptions {
    * known set. `serve.ts` passes its live adapter ids; see `HealthOptions`.
    */
   sources?: readonly string[]
+  /**
+   * Integrations this process cannot run for want of a key. Passed straight
+   * through to the health report, where they read as unhealthy sources naming
+   * the missing variable rather than as nothing at all. See `HealthOptions`.
+   */
+  unconfigured?: readonly UnconfiguredSource[]
 }
 
 /**
@@ -117,6 +124,7 @@ export function createApp(db: Db, options: AppOptions = {}) {
       await getHealth(db, {
         now: clock(),
         ...(options.sources != null ? { sources: options.sources } : {}),
+        ...(options.unconfigured != null ? { unconfigured: options.unconfigured } : {}),
       }),
     ),
   )

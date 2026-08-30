@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { Fetcher } from '../../src/fetch/fetcher.js'
+import { Fetcher, HttpError } from '../../src/fetch/fetcher.js'
 
 /** Stand up a throwaway loopback server so the default transport is exercised. */
 async function listen(
@@ -247,5 +247,29 @@ describe('Fetcher extra headers', () => {
     expect(await fetcher.text('https://example.com/a', { 'X-AMC-Vendor-Key': 'secret' })).toBe('ok')
     expect(calls).toHaveLength(2)
     expect((calls[1]!.headers as Record<string, string>)['X-AMC-Vendor-Key']).toBe('secret')
+  })
+})
+
+describe('HttpError', () => {
+  it('carries the status and the response body, not just the status line', async () => {
+    /*
+     * AMC answers a date with no showtimes with a 404 whose *body* says which
+     * kind of 404 it is: code 5217 "No showtimes found." for an empty day,
+     * code 5108 "Theatre N not found." for a bad theatre id. Those must be
+     * told apart, and a caller that only sees "failed: 404" cannot. So the
+     * body travels with the error.
+     */
+    const body = JSON.stringify({ errors: [{ code: 5217, exceptionMessage: 'No showtimes found.' }] })
+    const fetcher = new Fetcher({
+      minIntervalMs: 0,
+      fetchImpl: async () => new Response(body, { status: 404 }),
+    })
+
+    const error = await fetcher.text('https://api.amctheatres.com/v2/x').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(HttpError)
+    expect((error as HttpError).status).toBe(404)
+    expect((error as HttpError).body).toBe(body)
+    // The message is unchanged, so everything already matching on it still does.
+    expect((error as HttpError).message).toBe('GET https://api.amctheatres.com/v2/x failed: 404')
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createAdapters, allVenues } from '../../src/adapters/index.js'
+import { createAdapters, allVenues, unconfiguredAdapters } from '../../src/adapters/index.js'
 import { Fetcher } from '../../src/fetch/fetcher.js'
 
 describe('createAdapters', () => {
@@ -49,5 +49,36 @@ describe('createAdapters', () => {
       'siff-film-center',
       'siff-uptown',
     ])
+  })
+})
+
+describe('unconfiguredAdapters', () => {
+  // Omitting the AMC adapter is the right thing to *do* and the wrong thing to
+  // do *silently*. For a week the owner's two AMC venues stopped being swept
+  // and nothing said so: no adapter, no run, no row, no health entry. This is
+  // how the omission gets a name it can be reported under.
+  it('names AMC and the variable it wants when no key is configured', () => {
+    expect(unconfiguredAdapters()).toEqual([{ source: 'amc', variable: 'AMC_API_KEY' }])
+  })
+
+  it('treats an empty key as no key, exactly as createAdapters does', () => {
+    expect(unconfiguredAdapters({ amcApiKey: '' })).toEqual([
+      { source: 'amc', variable: 'AMC_API_KEY' },
+    ])
+  })
+
+  it('reports nothing missing when the key is present', () => {
+    expect(unconfiguredAdapters({ amcApiKey: 'KEY' })).toEqual([])
+  })
+
+  it('agrees with createAdapters about which sources are absent', () => {
+    // The two must never drift: an adapter that is built but reported missing,
+    // or missing but reported built, is worse than either fact alone.
+    for (const options of [{}, { amcApiKey: '' }, { amcApiKey: 'KEY' }]) {
+      const built = new Set(createAdapters(new Fetcher(), options).map((a) => a.id))
+      for (const entry of unconfiguredAdapters(options)) {
+        expect(built.has(entry.source)).toBe(false)
+      }
+    }
   })
 })
