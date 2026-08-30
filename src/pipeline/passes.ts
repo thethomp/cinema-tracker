@@ -67,7 +67,7 @@ export async function sweepPass(db: Db, options: SweepPassOptions = {}): Promise
   }
 
   const results = await runSweep(db, adapters, range, now)
-  const health = await evaluateHealth(db, adapters.map((adapter) => adapter.id))
+  const health = await evaluateHealth(db, adapters.map((adapter) => adapter.id), { now })
 
   return { range, results, health }
 }

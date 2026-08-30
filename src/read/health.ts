@@ -67,8 +67,10 @@ export async function getHealth(db: Db, options: HealthOptions = {}): Promise<He
     ]),
   ].sort()
 
+  // The same clock the unresolved count uses, so a report cannot say a source
+  // is fresh and its rows are stale in the same breath.
   const evaluated = new Map(
-    (await evaluateHealth(db, names)).map((entry) => [entry.source, entry]),
+    (await evaluateHealth(db, names, { now })).map((entry) => [entry.source, entry]),
   )
 
   const sources: SourceStatus[] = []
