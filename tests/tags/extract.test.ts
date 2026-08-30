@@ -77,14 +77,74 @@ describe('RuleTagExtractor', () => {
   it('tags festivals, sing-alongs, member screenings, and Q&As', async () => {
     expect(
       await extractor.extract(input('Castle in the Sky 40th Anniversary - Studio Ghibli Fest 2026')),
-    ).toEqual(['ANNIVERSARY', 'RE_RELEASE', 'FESTIVAL'])
-    expect(await extractor.extract(input('Grease Sing-Along'))).toEqual(['SING_ALONG'])
+    ).toEqual(['ANNIVERSARY', 'RE_RELEASE', 'FESTIVAL', 'EVENT'])
+    expect(await extractor.extract(input('Grease Sing-Along'))).toEqual(['SING_ALONG', 'EVENT'])
     expect(await extractor.extract(input('Members Only Preview: The Dog Stars'))).toEqual([
       'MEMBER_ONLY',
     ])
     expect(await extractor.extract(input('Blue Velvet + Q&A with Kyle MacLachlan'))).toEqual([
       'Q_AND_A',
     ])
+  })
+
+  it('infers EVENT from an event-shaped title, not only from a description', async () => {
+    // The bug this pins: AMC's API returns an `Event` attribute in the
+    // description and Cinemark's HTML returns no description at all, so the
+    // same Star Trek 60th-anniversary double feature scored 80 at AMC and 50
+    // at Cinemark. The programme is identical; only the chain's chattiness
+    // differed.
+    expect(
+      await extractor.extract(
+        input('Star Trek Double Feature - The Changeling & Star Trek: The Motion Picture'),
+      ),
+    ).toEqual(['EVENT'])
+    expect(
+      await extractor.extract(
+        input('Star Trek Double Feature - Space Seed & Star Trek II: The Wrath of Khan'),
+      ),
+    ).toEqual(['EVENT'])
+    expect(
+      await extractor.extract(
+        input('The Changeling + Star Trek: The Motion Picture 60th Anniversary Event'),
+      ),
+    ).toEqual(['ANNIVERSARY', 'RE_RELEASE', 'EVENT'])
+    expect(
+      await extractor.extract(
+        input('The Uprising: Early Access Live Q&A with Paul Greengrass and Andrew Garfield'),
+      ),
+    ).toEqual(['Q_AND_A', 'EVENT'])
+  })
+
+  it('does not read a plain anniversary re-release as an event', async () => {
+    // ANNIVERSARY already carries +50. Letting a bare "25th Anniversary" also
+    // fire EVENT would pay twice for one fact and put half the repertory
+    // calendar in the feed. Only "Anniversary Event" -- the phrase the chains
+    // use for a ticketed one-off -- qualifies.
+    expect(
+      await extractor.extract(input("Harry Potter and the Sorcerer's Stone 25th Anniversary")),
+    ).toEqual(['ANNIVERSARY', 'RE_RELEASE'])
+    expect(await extractor.extract(input('Spider-Man: Brand New Day'))).toEqual([])
+    expect(await extractor.extract(input('Agadha (Telugu with English Subtitles)'))).toEqual([])
+  })
+
+  it('reads a branded "Fest" strand as an event but a festival as neither', async () => {
+    // "Fest" is a handful of nights -- Studio Ghibli Fest 2026 is six live
+    // screenings. "Festival" is an institution: SIFF's runs to hundreds of
+    // screenings, and +30 on every one of them would mean nothing is special.
+    // The word boundary in /\bfest\b/ is what keeps them apart.
+    expect(await extractor.extract(input('Fathom Big Screen Fest: Casablanca'))).toEqual(['EVENT'])
+    expect(
+      await extractor.extract(input('Seattle International Film Festival: Opening Night')),
+    ).toEqual(['FESTIVAL'])
+  })
+
+  it('requires a marathon to be named as a programme, not as a film title', async () => {
+    // "Marathon Man" and "Brittany Runs a Marathon" are films. A bare
+    // /marathon/ would tag both, and over-tagging is the failure that costs
+    // the feed its meaning.
+    expect(await extractor.extract(input('Lord of the Rings Trilogy Marathon'))).toEqual(['EVENT'])
+    expect(await extractor.extract(input('Marathon Man'))).toEqual([])
+    expect(await extractor.extract(input('Brittany Runs a Marathon'))).toEqual([])
   })
 
   it('leaves an ordinary screening untagged', async () => {
