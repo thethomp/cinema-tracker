@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { LAST_RUN_KEY, readLastRunAt, writeLastRunAt } from '../../src/server/serve.js'
+import {
+  LAST_RUN_KEY,
+  pipelineConfigFromEnv,
+  readLastRunAt,
+  writeLastRunAt,
+} from '../../src/server/serve.js'
+import { unconfiguredIntegrations } from '../../src/pipeline/passes.js'
 import { recordRun } from '../../src/store/runs.js'
 import { appState } from '../../src/db/schema.js'
 import { emptyDb } from '../read/fixture.js'
@@ -142,5 +148,50 @@ describe('writeLastRunAt', () => {
     } finally {
       close()
     }
+  })
+})
+
+describe('pipelineConfigFromEnv', () => {
+  it('reads the Letterboxd username the sync pass needs', () => {
+    /*
+     * The gap this branch closes. `LETTERBOXD_USERNAME` sat in `.env` and in
+     * the `sync` CLI command while the scheduler swept, resolved and scored
+     * without ever touching Letterboxd -- so the diary was whatever the owner
+     * last synced by hand, seven days earlier, and the taste model scored
+     * three weeks of showtimes against it.
+     */
+    expect(
+      pipelineConfigFromEnv({
+        AMC_API_KEY: 'amc',
+        TMDB_API_KEY: 'tmdb',
+        LETTERBOXD_USERNAME: 'thethomp',
+        LETTERBOXD_CSV_DIR: '/tmp/export',
+      }),
+    ).toEqual({
+      amcApiKey: 'amc',
+      tmdbApiKey: 'tmdb',
+      letterboxdUsername: 'thethomp',
+      letterboxdCsvDir: '/tmp/export',
+    })
+  })
+
+  it('leaves an absent variable out entirely, so it is reported as unconfigured', () => {
+    // A key present-but-undefined would read as configured to every `?:`
+    // check downstream, which is how a missing integration goes quiet.
+    const config = pipelineConfigFromEnv({})
+    expect(config).toEqual({})
+    expect(unconfiguredIntegrations(config)).toEqual([
+      { source: 'amc', variable: 'AMC_API_KEY' },
+      { source: 'letterboxd', variable: 'LETTERBOXD_USERNAME' },
+      { source: 'resolve', variable: 'TMDB_API_KEY' },
+    ])
+  })
+
+  it('omits the CSV directory when unset, leaving the pass to default it', () => {
+    // `data/letterboxd` lives in one place -- DEFAULT_LETTERBOXD_CSV_DIR --
+    // so the CLI and the scheduler cannot read different exports.
+    expect(pipelineConfigFromEnv({ LETTERBOXD_USERNAME: 'thethomp' })).toEqual({
+      letterboxdUsername: 'thethomp',
+    })
   })
 })

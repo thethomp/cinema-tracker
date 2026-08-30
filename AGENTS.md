@@ -28,15 +28,19 @@ npm test                  # should be all green before you change anything
 | `npm test` | Full Vitest suite. No network access. |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run sweep` | Fetch showtimes from all venues into SQLite. Hits live sites. |
+| `npm run sync` | Pull the Letterboxd diary and watchlist into SQLite. Hits letterboxd.com. Needs `LETTERBOXD_USERNAME`. |
 | `npm run resolve` | Resolve unresolved raw titles against TMDB, and fetch metadata for rated Letterboxd films. Hits live API. |
 | `npm run score` | Recompute taste affinities, tag and score every future screening, print the top highlights. No network. |
-| `npm run serve` | Build the UI and serve it with the API on :8787, sweeping every 6 hours. Add `--no-sweep` to serve without the passes. |
+| `npm run serve` | Build the UI and serve it with the API on :8787, running all four passes every 6 hours. Add `--no-sweep` to serve without them. |
 
 `npm run sweep` takes a few minutes — the fetch layer allows one request per host
 every 2 seconds by design. **Don't run two full sweeps back to back**; Cinemark
 rate-limits at roughly 88 requests inside four minutes.
 
-`npm run serve` runs the same passes on a 6-hour timer. It records each run in
+`npm run serve` runs the same passes on a 6-hour timer, in order: sweep, sync,
+resolve, score. The sync runs *before* resolve because it introduces new
+watchlist films and newly rated diary entries, and resolve is what attaches
+TMDB metadata to them. It records each run in
 `app_state.last_pipeline_run_at`, and falls back to the newest `source_runs` row
 when that key is absent, so restarting the server does **not** re-sweep.
 

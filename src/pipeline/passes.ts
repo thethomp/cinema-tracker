@@ -1,7 +1,7 @@
 /**
- * The three passes, as functions.
+ * The four passes, as functions.
  *
- * `npm run sweep|resolve|score` and the in-process scheduler behind
+ * `npm run sweep|sync|resolve|score` and the in-process scheduler behind
  * `npm run serve` must do exactly the same work, so the work lives here and
  * the callers own only their reporting. Nothing in this module prints; a CLI
  * wants a formatted report and a long-running server wants one line per pass,
@@ -14,6 +14,12 @@ import { createAdapters, allVenues, unconfiguredAdapters } from '../adapters/ind
 import { seedTasteRules, seedVenues } from '../db/seed.js'
 import { Fetcher } from '../fetch/fetcher.js'
 import { runSweep } from '../sweep/sweep.js'
+import {
+  syncLetterboxd,
+  LETTERBOXD_SOURCE,
+  type LetterboxdSyncResult,
+  type TextFetcher,
+} from '../letterboxd/sync.js'
 import { evaluateHealth, type SourceHealth } from '../store/runs.js'
 import { TmdbClient } from '../tmdb/client.js'
 import { runResolution } from '../resolve/run.js'
@@ -27,8 +33,23 @@ export const FETCH_WINDOW_DAYS = 21
 /** Every venue in this project is in Seattle. */
 export const TZ = 'America/Los_Angeles'
 
+/**
+ * Where an unzipped Letterboxd export is expected to sit.
+ *
+ * One constant for the CLI and the scheduler both, because they must read the
+ * same export: a scheduled sync that quietly skipped the CSV would see only
+ * the 50 entries in the RSS window and hand the taste model a fraction of the
+ * rating history the CLI gives it. A missing directory is not an error.
+ */
+export const DEFAULT_LETTERBOXD_CSV_DIR = 'data/letterboxd'
+
 export interface AdapterConfig {
   amcApiKey?: string
+}
+
+export interface PassConfig extends AdapterConfig {
+  tmdbApiKey?: string
+  letterboxdUsername?: string
 }
 
 /**
@@ -38,13 +59,17 @@ export interface AdapterConfig {
  * including the fact that AMC is omitted entirely when its vendor key is
  * absent. The health report unions this with its own known set, so a source
  * dropped here still shows up as not running rather than disappearing.
+ *
+ * Letterboxd is in the list too, and not an adapter: it records `source_runs`
+ * rows like a venue and is swept on the same schedule, so the health report
+ * has to expect it *before* its first successful run. Without that, a sync
+ * that has never once succeeded reads as a source nobody asked for.
  */
-export function configuredSourceIds(config: AdapterConfig = {}): string[] {
-  return createAdapters(new Fetcher(), config).map((adapter) => adapter.id)
-}
-
-export interface PassConfig extends AdapterConfig {
-  tmdbApiKey?: string
+export function configuredSourceIds(config: PassConfig = {}): string[] {
+  return [
+    ...createAdapters(new Fetcher(), config).map((adapter) => adapter.id),
+    ...(config.letterboxdUsername ? [LETTERBOXD_SOURCE] : []),
+  ]
 }
 
 /**
@@ -60,10 +85,18 @@ export interface PassConfig extends AdapterConfig {
  * `resolve` is not a swept source and writes no `source_runs` rows, so it
  * appears in the health report *only* when it cannot run. Listing it always
  * would mean listing it as "never run" forever.
+ *
+ * Letterboxd is listed in pipeline order, between the sweep and the resolve
+ * it runs between. It does write `source_runs` rows, so when it is configured
+ * `configuredSourceIds` carries it and the staleness check judges it like any
+ * venue; only the unconfigured case belongs here.
  */
 export function unconfiguredIntegrations(config: PassConfig = {}): UnconfiguredSource[] {
   return [
     ...unconfiguredAdapters(config),
+    ...(config.letterboxdUsername
+      ? []
+      : [{ source: LETTERBOXD_SOURCE, variable: 'LETTERBOXD_USERNAME' }]),
     ...(config.tmdbApiKey ? [] : [{ source: 'resolve', variable: 'TMDB_API_KEY' }]),
   ]
 }
@@ -105,6 +138,42 @@ export async function sweepPass(db: Db, options: SweepPassOptions = {}): Promise
   ]
 
   return { range, results, health }
+}
+
+export interface SyncPassOptions {
+  username: string
+  /** Defaults to `DEFAULT_LETTERBOXD_CSV_DIR`. A missing directory is a no-op. */
+  csvDir?: string
+  now?: Date
+  /**
+   * The only I/O this pass does, injected so tests never touch the network.
+   * Callers pass nothing and get the rate-limited default.
+   */
+  fetcher?: TextFetcher
+}
+
+/**
+ * Pull the Letterboxd diary and watchlist.
+ *
+ * This runs on the sweep schedule, as the design spec always intended --- "the
+ * diary feed at letterboxd.com/<user>/rss/ is polled on the normal sweep
+ * schedule". Until it did, `runPipeline` swept, resolved and scored while the
+ * only path to a sync was `npm run sync` by hand, so the taste model scored
+ * three weeks of showtimes against whatever ratings the owner last remembered
+ * to fetch. The staleness check made that visible rather than causing it.
+ *
+ * **It cannot throw.** `syncLetterboxd` turns a failure into a `failed`
+ * result and its own `source_runs` row, which is what lets the scheduler call
+ * it without a guard: a Letterboxd outage costs this pass and leaves the
+ * sweep, the resolve and the score untouched.
+ */
+export async function syncPass(db: Db, options: SyncPassOptions): Promise<LetterboxdSyncResult> {
+  return syncLetterboxd(
+    db,
+    options.fetcher ?? new Fetcher(),
+    { username: options.username, csvDir: options.csvDir ?? DEFAULT_LETTERBOXD_CSV_DIR },
+    options.now ?? new Date(),
+  )
 }
 
 export interface ResolvePassResult {
