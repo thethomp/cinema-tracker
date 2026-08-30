@@ -7,8 +7,12 @@
  * purely so the UI can be developed against real rows.
  */
 import { serve } from '@hono/node-server'
+import { loadEnv } from '../src/config/env.js'
 import { createDatabase } from '../src/db/client.js'
 import { createApp } from '../src/server/app.js'
+
+// Before the constants below read it. See `src/config/env.ts`.
+loadEnv()
 
 const PORT = Number(process.env.PORT ?? 8787)
 const DB_PATH = process.env.DB_PATH ?? 'data/cinema-tracker.db'

@@ -49,6 +49,7 @@ venue sites/APIs → adapters → normalize → SQLite → resolve → score →
 | Path | Responsibility |
 |---|---|
 | `src/core/` | Shared types and time math. No I/O. |
+| `src/config/` | `.env` parsing and loading. Pure parser, thin loader. |
 | `src/fetch/` | The only place that makes HTTP requests. Rate limiting lives here. |
 | `src/adapters/` | One module per venue source. |
 | `src/tmdb/` | TMDB HTTP client. No matching logic. |
@@ -140,8 +141,12 @@ trusting the selectors.
 
 ## Secrets
 
-`.env` is gitignored and holds `TMDB_API_KEY` and `AMC_API_KEY`. Load with
-`set -a; . ./.env; set +a`.
+`.env` is gitignored and holds `TMDB_API_KEY`, `AMC_API_KEY` and
+`LETTERBOXD_USERNAME`. **Every entry point loads it for you** — `src/cli.ts` and
+`scripts/dev-api.ts` call `loadEnv()` (see `src/config/env.ts`) before anything
+reads `process.env`, so `npm run serve` and friends just work. A missing `.env`
+is a no-op, and a variable already set in the real environment always wins over
+the file.
 
 **Never print a key value, echo it into logs, or paste it into a commit,
 a test fixture, or a chat message.** Report presence and length instead.

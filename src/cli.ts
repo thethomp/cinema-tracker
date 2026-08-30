@@ -1,9 +1,21 @@
+import { loadEnv } from './config/env.js'
 import { createDatabase } from './db/client.js'
 import { Fetcher } from './fetch/fetcher.js'
 import { resolvePass, scorePass, sweepPass } from './pipeline/passes.js'
 import { syncLetterboxd } from './letterboxd/sync.js'
 import { startServer } from './server/serve.js'
 import { HIGHLIGHT_THRESHOLD } from './score/score.js'
+
+/*
+ * First, before anything reads `process.env`.
+ *
+ * Every command below is configured entirely by environment variables, and
+ * until this call existed none of them loaded `.env` -- so each one worked
+ * only after the operator ran `set -a; . ./.env; set +a` by hand, and quietly
+ * did less than it claimed when they forgot. Real environment variables still
+ * win; see `loadEnv`.
+ */
+loadEnv()
 
 const DB_PATH = process.env.DATABASE_PATH ?? 'data/cinema-tracker.db'
 const LETTERBOXD_CSV_DIR = process.env.LETTERBOXD_CSV_DIR ?? 'data/letterboxd'
