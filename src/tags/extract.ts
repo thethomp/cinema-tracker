@@ -29,6 +29,47 @@ export const SPECIAL_EVENT_TAGS: ReadonlySet<Tag> = new Set<Tag>([
   'ANNIVERSARY',
 ])
 
+/**
+ * How each tag is spelled for a reader.
+ *
+ * `Record<Tag, string>` rather than a partial map on purpose: adding a tag
+ * without deciding how it reads is a compile error, not a chip that says
+ * `SOME_NEW_TAG`.
+ *
+ * Sentence case, because these labels sit in running order beside prose ones
+ * like "on the watchlist". The vermilion format stamps in the UI use their own
+ * upper-case spellings -- a stamp is a rubber stamp, a reason is a sentence --
+ * and the two are deliberately not the same table.
+ */
+const TAG_LABELS: Record<Tag, string> = {
+  '70MM': '70mm',
+  '35MM': '35mm',
+  IMAX: 'IMAX',
+  DOLBY: 'Dolby',
+  LIVE_SCORE: 'Live score',
+  Q_AND_A: 'Q & A',
+  ANNIVERSARY: 'Anniversary',
+  RE_RELEASE: 'Re-release',
+  FESTIVAL: 'Festival',
+  SING_ALONG: 'Sing-along',
+  MEMBER_ONLY: 'Members only',
+  ARTHOUSE: 'Arthouse',
+  EVENT: 'Event',
+}
+
+/**
+ * The display spelling of a tag identifier.
+ *
+ * Anything that is not a known tag comes back untouched. A blanket
+ * underscore-to-space transform is the wrong tool here: the same call site
+ * also sees labels like "on the watchlist" and "director Christopher Nolan",
+ * and mangling those to say something else would be worse than a raw
+ * identifier from a schema this function has not been taught about.
+ */
+export function tagLabel(tag: string): string {
+  return Object.hasOwn(TAG_LABELS, tag) ? TAG_LABELS[tag as Tag] : tag
+}
+
 export interface TagInput {
   rawTitle: string
   description?: string | undefined
@@ -131,11 +172,44 @@ const RULES: Rule[] = [
   },
   {
     tag: 'EVENT',
-    // Description only. "60th Anniversary Event" is a title suffix on a dozen
-    // Star Trek rows that ANNIVERSARY already covers; letting EVENT fire on
-    // titles would double-label them for nothing.
+    // AMC's `attributes` array arrives as a comma-separated description and
+    // carries a literal `Event` member. Anchored on the list separators: a
+    // bare "event" anywhere in prose means nothing.
     fields: ['description'],
-    patterns: [/(?:^|,)\s*event\s*(?:,|$)/i, /\bspecial\s+event\b/i],
+    patterns: [/(?:^|,)\s*event\s*(?:,|$)/i],
+  },
+  {
+    tag: 'EVENT',
+    // The same fact, read off the title, because a source that says less must
+    // not score less. AMC populates `description` and Cinemark populates none
+    // at all, so the identical Star Trek 60th-anniversary double features
+    // scored 80 at AMC and 50 at Cinemark on the same night. EVENT is worth
+    // +30; the gap was chain chattiness, not programming.
+    //
+    // Every pattern names a ticketed one-off, and each one was checked against
+    // the live corpus before it was added:
+    //
+    //   - `fest` but not `festival`. "Studio Ghibli Fest 2026" is six
+    //     screenings; SIFF's *festival* is hundreds, and paying +30 for each
+    //     would mean nothing on the page is special. The word boundary is
+    //     load-bearing -- /\bfest\b/ cannot match inside "festival".
+    //   - `anniversary event`, never a bare `anniversary`. ANNIVERSARY already
+    //     pays +50 for a 25th-anniversary re-release and stacking EVENT on top
+    //     would price one fact twice.
+    //   - marathon only when qualified. "Marathon Man" and "Brittany Runs a
+    //     Marathon" are films; a bare /marathon/ tags both.
+    fields: ['title', 'description'],
+    patterns: [
+      /\bspecial\s+event\b/i,
+      /\b(?:double|triple)\s+feature\b/i,
+      /\bfest\b/i,
+      /\banniversary\s+event\b/i,
+      /\blive\s+q\s*(?:&|and)\s*a\b/i,
+      /\bearly\s+access\b/i,
+      /\bpresented\s+by\b/i,
+      /\bsing[\s-]?along\b/i,
+      /\b(?:film|movie|trilogy|franchise|saga|series|all[\s-]?night|\d+[\s-]?(?:film|hour))\s+marathon\b/i,
+    ],
   },
 ]
 

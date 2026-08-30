@@ -131,8 +131,10 @@ describe('getHighlights', () => {
       // The best offer sets the score: a 70mm print is the reason this film is
       // in the feed, and averaging it with three digital showings would bury it.
       expect(entry.score).toBe(95)
+      // Tag-shaped reasons are spelled the way the page spells them; the
+      // rest are already prose and pass through untouched.
       expect(entry.reasons).toEqual([
-        { label: '70MM', weight: 50 },
+        { label: '70mm', weight: 50 },
         { label: 'director Christopher Nolan', weight: 30 },
         { label: 'SIFF', weight: 15 },
       ])
@@ -163,6 +165,68 @@ describe('getHighlights', () => {
       expect(entry.showtimes[0]!.localDate).toBe('2026-08-22')
       expect(entry.showtimes[0]!.ticketUrl).toBe('https://siff.example/odyssey-70mm')
       expect(entry.showtimes[0]!.id).toBeTypeOf('number')
+    } finally {
+      close()
+    }
+  })
+
+  it('spells a tag reason the way the page spells it, and leaves prose alone', async () => {
+    // The WHY row was printing "Q_AND_A +50" under a stamp reading "Q & A".
+    // Only the two signals whose detail *is* a tag identifier get formatted:
+    // "on the watchlist", "director Christopher Nolan" and a bare language
+    // code are already human-readable, and a blanket underscore-to-space pass
+    // over every label would be the wrong tool applied to all of them.
+    const { db, close } = await emptyDb()
+    try {
+      await addScreenings(db, [
+        {
+          rawTitle: 'Blue Velvet + Q&A with Kyle MacLachlan',
+          venueId: 'siff-uptown',
+          startsAt: '2026-08-23T02:00:00Z',
+          localDate: '2026-08-22',
+          score: 215,
+          tags: ['Q_AND_A', 'RE_RELEASE', 'EVENT'],
+          reasons: [
+            { signal: 'watchlist', detail: 'on the watchlist', weight: 100 },
+            { signal: 'special-event', detail: 'Q_AND_A, LIVE_SCORE', weight: 50 },
+            { signal: 'affinity', detail: 'director Christopher Nolan', weight: 30 },
+            { signal: 'language', detail: 'ja', weight: 20 },
+            { signal: 'tag', detail: 'RE_RELEASE', weight: 15 },
+          ],
+        },
+      ])
+
+      const entries = await getHighlights(db, WINDOW)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]!.reasons).toEqual([
+        { label: 'on the watchlist', weight: 100 },
+        { label: 'Q & A, Live score', weight: 50 },
+        { label: 'director Christopher Nolan', weight: 30 },
+        { label: 'ja', weight: 20 },
+        { label: 'Re-release', weight: 15 },
+      ])
+      // The identifiers still travel raw where they are identifiers.
+      expect(entries[0]!.tags).toEqual(['EVENT', 'Q_AND_A', 'RE_RELEASE'])
+    } finally {
+      close()
+    }
+  })
+
+  it('falls back to the signal name when a reason carries no detail', async () => {
+    const { db, close } = await emptyDb()
+    try {
+      await addScreenings(db, [
+        {
+          rawTitle: 'Coyote vs. Acme',
+          venueId: 'siff-uptown',
+          startsAt: '2026-08-23T02:00:00Z',
+          localDate: '2026-08-22',
+          score: 60,
+          reasons: [{ signal: 'declared', detail: '   ', weight: 60 }],
+        },
+      ])
+      const entries = await getHighlights(db, WINDOW)
+      expect(entries[0]!.reasons).toEqual([{ label: 'declared', weight: 60 }])
     } finally {
       close()
     }
