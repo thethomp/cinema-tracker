@@ -39,7 +39,7 @@
  */
 .entry {
   display: grid;
-  grid-template-columns: var(--margin-col) 1fr;
+  grid-template-columns: var(--margin-col) var(--plate-col) 1fr;
   column-gap: var(--margin-gap);
   padding: 1.15rem 0 1.3rem;
   border-bottom: var(--rule);
@@ -48,19 +48,18 @@
 }
 
 /*
- * The plate.
+ * The plate column is reserved on every entry, not only the ones with a poster.
  *
- * A third column only when there is something to print in it. Rendering the
- * poster conditionally *and* switching the template off the same condition is
- * what makes a missing poster close the row up completely -- an always-on
- * track would leave the gap behind even at zero width, and an empty ruled box
- * where a poster should be is worse than no poster.
+ * 11 of 23 live entries carry no poster -- an unresolved raw title has no film
+ * row to hold one -- so collapsing the column stepped the title's left edge in
+ * and out by ~150px as you scroll. A printed programme holds its text block; a
+ * ragged edge was the least programme-like thing on the page. Empty space reads
+ * as margin, which is what it is. What is still never rendered is a
+ * *placeholder box* -- a grey rectangle where a poster should be is worse than
+ * nothing.
  */
-.entry--plated {
-  grid-template-columns: var(--margin-col) var(--plate-col) 1fr;
-}
-
 .entry__margin {
+  grid-column: 1;
   position: relative;
   text-align: right;
   padding-top: 0.35rem;
@@ -116,6 +115,7 @@
  * radius, no shadow, no hover: it is a halftone block, not a card.
  */
 .entry__poster {
+  grid-column: 2;
   display: block;
   align-self: start;
   margin-top: 0.42rem;
@@ -133,6 +133,7 @@
 }
 
 .entry__body {
+  grid-column: 3;
   min-width: 0;
 }
 
@@ -375,27 +376,31 @@
     text-align: left;
   }
 
+  /*
+   * Phone: the plate keeps a column but halves, and the rank rule spans the
+   * full width above both. Anything wider and the title loses more measure
+   * than the poster is worth.
+   *
+   * The columns are re-declared here, so the desktop track numbers do not
+   * apply -- poster and body are placed explicitly for this layout too.
+   */
   .entry {
-    grid-template-columns: 1fr;
+    grid-template-columns: 58px minmax(0, 1fr);
+    column-gap: 0.85rem;
     row-gap: 0.35rem;
   }
 
-  /*
-   * Phone: the plate keeps its column but halves, and the rank rule spans the
-   * full width above both. Anything wider than this and the title loses more
-   * measure than the poster is worth.
-   */
-  .entry--plated {
-    grid-template-columns: 58px minmax(0, 1fr);
-    column-gap: 0.85rem;
-  }
-
-  .entry--plated .entry__margin {
+  .entry__margin {
     grid-column: 1 / -1;
   }
 
   .entry__poster {
+    grid-column: 1;
     margin-top: 0.3rem;
+  }
+
+  .entry__body {
+    grid-column: 2;
   }
 
   /* Rank moves inline, above the title, set as a rule of its own. */
