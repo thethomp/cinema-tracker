@@ -31,6 +31,13 @@
   --margin-col: 4.5rem;
   --margin-gap: 1.5rem;
 
+  /*
+   * The plate. A programme prints a small inline still beside the title, never
+   * a poster the title has to compete with -- at 92px the Bodoni line is still
+   * the largest thing in the row, which is the whole constraint.
+   */
+  --plate-col: 92px;
+
   --rule: 1px solid var(--ink-soft);
   --rule-heavy: 2px solid var(--ink);
 }

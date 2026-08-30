@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { FilmEntry } from '../api'
 import { entryDomId, isStamped, splitTags, summarizeShowtimes, venueSummary } from '../entry'
 import { formatLongDate, formatRuntime, formatTime, relativeDayLabel } from '../format'
@@ -12,6 +13,9 @@ import { FormatStamp } from './FormatStamp'
 const MAX_DAYS = 2
 const MAX_TIMES_PER_DAY = 6
 const MAX_NAMED_VENUES = 2
+
+/** Intrinsic size hint, in CSS pixels; the plate itself is sized in CSS. */
+const POSTER_WIDTH = 92
 
 export interface HighlightEntryProps {
   entry: FilmEntry
@@ -40,6 +44,20 @@ export function HighlightEntry({
   const venues = venueSummary(entry.venues, MAX_NAMED_VENUES)
   const isSpecial = entry.tags.some(isStamped)
 
+  /*
+   * A TMDB poster path that 404s is a plate that never gets inked, not a
+   * broken-image glyph. Falling back to `null` also drops the grid column, so
+   * a rotted URL closes the row up exactly as a missing one does.
+   *
+   * Plateless is not the rare case it looks like from the film table. Only 3
+   * of 252 *films* lack a poster, but an entry with no `film_id` -- an
+   * unresolved raw title, which is what every Star Trek double bill and
+   * early-access Q&A currently is -- has no film row to carry one. Eleven of
+   * the twenty-three entries in the live feed print no plate.
+   */
+  const [posterBroken, setPosterBroken] = useState(false)
+  const poster = !posterBroken && entry.posterUrl ? entry.posterUrl : null
+
   const meta = [
     entry.director,
     entry.year != null ? String(entry.year) : null,
@@ -49,7 +67,9 @@ export function HighlightEntry({
   return (
     <article
       id={entryDomId(entry)}
-      className={`entry ink-in${isSpecial ? ' entry--special' : ''}`}
+      className={`entry ink-in${isSpecial ? ' entry--special' : ''}${
+        poster != null ? ' entry--plated' : ''
+      }`}
       style={{ animationDelay: `${delayMs}ms` }}
     >
       <div className="entry__margin">
@@ -58,6 +78,19 @@ export function HighlightEntry({
           {Math.round(entry.score)}
         </span>
       </div>
+
+      {poster != null ? (
+        <img
+          className="entry__poster"
+          src={poster}
+          alt={`Poster for ${entry.title}`}
+          width={POSTER_WIDTH}
+          height={POSTER_WIDTH * 1.5}
+          loading="lazy"
+          decoding="async"
+          onError={() => setPosterBroken(true)}
+        />
+      ) : null}
 
       <div className="entry__body">
         <div className="entry__headline">

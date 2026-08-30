@@ -39,7 +39,7 @@
  */
 .entry {
   display: grid;
-  grid-template-columns: var(--margin-col) 1fr;
+  grid-template-columns: var(--margin-col) var(--plate-col) 1fr;
   column-gap: var(--margin-gap);
   padding: 1.15rem 0 1.3rem;
   border-bottom: var(--rule);
@@ -47,7 +47,19 @@
   scroll-margin-top: 1.5rem;
 }
 
+/*
+ * The plate column is reserved on every entry, not only the ones with a poster.
+ *
+ * 11 of 23 live entries carry no poster -- an unresolved raw title has no film
+ * row to hold one -- so collapsing the column stepped the title's left edge in
+ * and out by ~150px as you scroll. A printed programme holds its text block; a
+ * ragged edge was the least programme-like thing on the page. Empty space reads
+ * as margin, which is what it is. What is still never rendered is a
+ * *placeholder box* -- a grey rectangle where a poster should be is worse than
+ * nothing.
+ */
 .entry__margin {
+  grid-column: 1;
   position: relative;
   text-align: right;
   padding-top: 0.35rem;
@@ -93,7 +105,35 @@
   background: var(--accent);
 }
 
+/*
+ * Ink on the same stock.
+ *
+ * Two things do the work. `multiply` drops the poster's whites to paper
+ * instead of leaving a white rectangle floating on beige -- the difference
+ * between printed and pasted. The filter pulls the saturation back so a
+ * full-colour key art sits under the type rather than shouting over it. No
+ * radius, no shadow, no hover: it is a halftone block, not a card.
+ */
+.entry__poster {
+  grid-column: 2;
+  display: block;
+  align-self: start;
+  margin-top: 0.42rem;
+  width: 100%;
+  /* `height: auto` is load-bearing: the width/height attributes are
+     presentational hints, and without this the attribute height wins over
+     `aspect-ratio` and the plate stretches at narrow widths. */
+  height: auto;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border: 1px solid var(--ink-soft);
+  background: var(--paper);
+  filter: saturate(0.68) sepia(0.16) contrast(0.98) brightness(1.05);
+  mix-blend-mode: multiply;
+}
+
 .entry__body {
+  grid-column: 3;
   min-width: 0;
 }
 
@@ -336,9 +376,31 @@
     text-align: left;
   }
 
+  /*
+   * Phone: the plate keeps a column but halves, and the rank rule spans the
+   * full width above both. Anything wider and the title loses more measure
+   * than the poster is worth.
+   *
+   * The columns are re-declared here, so the desktop track numbers do not
+   * apply -- poster and body are placed explicitly for this layout too.
+   */
   .entry {
-    grid-template-columns: 1fr;
+    grid-template-columns: 58px minmax(0, 1fr);
+    column-gap: 0.85rem;
     row-gap: 0.35rem;
+  }
+
+  .entry__margin {
+    grid-column: 1 / -1;
+  }
+
+  .entry__poster {
+    grid-column: 1;
+    margin-top: 0.3rem;
+  }
+
+  .entry__body {
+    grid-column: 2;
   }
 
   /* Rank moves inline, above the title, set as a rule of its own. */
@@ -406,6 +468,14 @@
 /*
  * A ruled table, not cards. Four columns: stamp, film, house, next time --
  * the four things that decide whether an evening gets rearranged.
+ *
+ * Deliberately no plate. A one-line row only affords about 30px of poster,
+ * which is an unreadable smudge rather than a thing you recognise, and it
+ * costs the row half again its height. Worse, this strip earns its keep by
+ * being scannable down four aligned columns, and the rows here are the ones
+ * least likely to resolve to a TMDB film -- a Q&A or a double bill -- so the
+ * column would print holes. Recognition happens in the feed below; this is a
+ * diary of when and where.
  */
 .specials__row {
   display: grid;
