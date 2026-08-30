@@ -29,6 +29,47 @@ export const SPECIAL_EVENT_TAGS: ReadonlySet<Tag> = new Set<Tag>([
   'ANNIVERSARY',
 ])
 
+/**
+ * How each tag is spelled for a reader.
+ *
+ * `Record<Tag, string>` rather than a partial map on purpose: adding a tag
+ * without deciding how it reads is a compile error, not a chip that says
+ * `SOME_NEW_TAG`.
+ *
+ * Sentence case, because these labels sit in running order beside prose ones
+ * like "on the watchlist". The vermilion format stamps in the UI use their own
+ * upper-case spellings -- a stamp is a rubber stamp, a reason is a sentence --
+ * and the two are deliberately not the same table.
+ */
+const TAG_LABELS: Record<Tag, string> = {
+  '70MM': '70mm',
+  '35MM': '35mm',
+  IMAX: 'IMAX',
+  DOLBY: 'Dolby',
+  LIVE_SCORE: 'Live score',
+  Q_AND_A: 'Q & A',
+  ANNIVERSARY: 'Anniversary',
+  RE_RELEASE: 'Re-release',
+  FESTIVAL: 'Festival',
+  SING_ALONG: 'Sing-along',
+  MEMBER_ONLY: 'Members only',
+  ARTHOUSE: 'Arthouse',
+  EVENT: 'Event',
+}
+
+/**
+ * The display spelling of a tag identifier.
+ *
+ * Anything that is not a known tag comes back untouched. A blanket
+ * underscore-to-space transform is the wrong tool here: the same call site
+ * also sees labels like "on the watchlist" and "director Christopher Nolan",
+ * and mangling those to say something else would be worse than a raw
+ * identifier from a schema this function has not been taught about.
+ */
+export function tagLabel(tag: string): string {
+  return Object.hasOwn(TAG_LABELS, tag) ? TAG_LABELS[tag as Tag] : tag
+}
+
 export interface TagInput {
   rawTitle: string
   description?: string | undefined

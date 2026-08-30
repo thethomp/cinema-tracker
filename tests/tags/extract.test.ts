@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { RuleTagExtractor, SPECIAL_EVENT_TAGS, type TagInput } from '../../src/tags/extract.js'
+import {
+  RuleTagExtractor,
+  SPECIAL_EVENT_TAGS,
+  TAGS,
+  tagLabel,
+  type TagInput,
+} from '../../src/tags/extract.js'
 
 const extractor = new RuleTagExtractor()
 
@@ -193,5 +199,35 @@ describe('RuleTagExtractor', () => {
       'LIVE_SCORE',
       'Q_AND_A',
     ])
+  })
+})
+
+describe('tagLabel', () => {
+  it('spells a tag the way the page does, not the way the database does', async () => {
+    // The reason chips under WHY were printing the raw identifier -- "Q_AND_A
+    // +50" -- directly under a format stamp reading "Q & A". Same tag, two
+    // spellings, one of them a database dump.
+    expect(tagLabel('Q_AND_A')).toBe('Q & A')
+    expect(tagLabel('LIVE_SCORE')).toBe('Live score')
+    expect(tagLabel('RE_RELEASE')).toBe('Re-release')
+    expect(tagLabel('70MM')).toBe('70mm')
+    expect(tagLabel('35MM')).toBe('35mm')
+    expect(tagLabel('IMAX')).toBe('IMAX')
+    expect(tagLabel('DOLBY')).toBe('Dolby')
+    expect(tagLabel('ANNIVERSARY')).toBe('Anniversary')
+    expect(tagLabel('FESTIVAL')).toBe('Festival')
+    expect(tagLabel('SING_ALONG')).toBe('Sing-along')
+    expect(tagLabel('MEMBER_ONLY')).toBe('Members only')
+    expect(tagLabel('ARTHOUSE')).toBe('Arthouse')
+    expect(tagLabel('EVENT')).toBe('Event')
+  })
+
+  it('has a label for every tag, and returns anything else untouched', async () => {
+    // A tag added without a label is a compile error, not a mangled chip. The
+    // fallback exists for a stored tag from an older schema; it prints the
+    // identifier as-is rather than guessing at English.
+    for (const tag of TAGS) expect(tagLabel(tag)).not.toBe('')
+    expect(tagLabel('SOMETHING_NEW')).toBe('SOMETHING_NEW')
+    expect(tagLabel('on the watchlist')).toBe('on the watchlist')
   })
 })

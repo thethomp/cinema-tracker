@@ -2,6 +2,7 @@ import { and, asc, eq, gt, lte } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
 import { appState, films, screenings, venues } from '../db/schema.js'
 import { matchKey, normalizeTitle } from '../resolve/normalize.js'
+import { tagLabel } from '../tags/extract.js'
 import type { ScoreReason } from '../core/types.js'
 
 /**
@@ -160,11 +161,38 @@ export function entryKey(filmId: number | null, rawTitle: string): string {
   return `title:${normalized || rawTitle.trim().toLowerCase()}`
 }
 
+/**
+ * The two signals whose `detail` is a tag identifier rather than prose.
+ *
+ * `special-event` joins several with ", " when a screening is more than one
+ * kind of special, so each part is spelled separately.
+ */
+const TAG_SIGNALS: ReadonlySet<string> = new Set(['special-event', 'tag'])
+
+/**
+ * Flatten a stored reason into something a person reads.
+ *
+ * `label` has always been a display string -- "on the watchlist", "already
+ * logged on Letterboxd", "director Christopher Nolan" -- with tags the one
+ * exception, which is why the WHY row printed `Q_AND_A +50` under a stamp
+ * reading `Q & A`. Formatting here rather than in the UI keeps that contract
+ * uniform for every consumer of the API, and the `signal` needed to tell a tag
+ * from a language code exists only on this side of the flattening. Raw
+ * identifiers still travel over the wire where they *are* identifiers: the
+ * entry's `tags` array, which the UI formats itself.
+ */
 function toReasons(reasons: ScoreReason[] | null): EntryReason[] {
-  return (reasons ?? []).map((reason) => ({
-    label: reason.detail?.trim() || reason.signal,
-    weight: reason.weight,
-  }))
+  return (reasons ?? []).map((reason) => {
+    const detail = reason.detail?.trim()
+    if (!detail) return { label: reason.signal, weight: reason.weight }
+    const label = TAG_SIGNALS.has(reason.signal)
+      ? detail
+          .split(',')
+          .map((part) => tagLabel(part.trim()))
+          .join(', ')
+      : detail
+    return { label, weight: reason.weight }
+  })
 }
 
 /**
