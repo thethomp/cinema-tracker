@@ -191,6 +191,89 @@ describe('getHealth', () => {
     }
   })
 
+  it('reports an unconfigured source as unhealthy, naming the variable', async () => {
+    /*
+     * `createAdapters` drops AMC when its vendor key is absent, which is the
+     * right thing to do and the wrong thing to do silently. Vanishing is the
+     * one outcome this report exists to prevent: an entry saying why AMC is
+     * not running is strictly better than no entry at all.
+     */
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'amc', variable: 'AMC_API_KEY' }],
+      })
+      expect(health.sources.find((s) => s.source === 'amc')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: AMC_API_KEY is not set',
+      })
+      expect(health.healthy).toBe(false)
+    } finally {
+      close()
+    }
+  })
+
+  it('prefers the missing key over the run history behind it', async () => {
+    // AMC's newest row is a week-old success. "stale: last ran 7 days ago" is
+    // true but leads nowhere; "AMC_API_KEY is not set" is the actionable fact,
+    // so it wins. The run figures stay on the row either way.
+    const { db, close } = await emptyDb()
+    try {
+      await recordRun(db, {
+        source: 'amc',
+        startedAt: AT('2026-08-15T18:00:00Z'),
+        finishedAt: AT('2026-08-15T18:04:00Z'),
+        status: 'ok',
+        itemCount: 1262,
+      })
+
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'amc', variable: 'AMC_API_KEY' }],
+      })
+      expect(health.sources.find((s) => s.source === 'amc')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: AMC_API_KEY is not set',
+        lastRunAt: '2026-08-15T18:00:00.000Z',
+        lastStatus: 'ok',
+        itemCount: 1262,
+      })
+    } finally {
+      close()
+    }
+  })
+
+  it('lists a pass that is not a swept source at all', async () => {
+    // The resolve pass writes no source_runs rows, so it is invisible to every
+    // other path into this report. Without a key it does not run, films go
+    // unlinked, and until now the only trace was a console.warn in a server
+    // log nobody reads. It appears here only when it cannot run.
+    const { db, close } = await emptyDb()
+    try {
+      const health = await getHealth(db, {
+        now: NOW,
+        unconfigured: [{ source: 'resolve', variable: 'TMDB_API_KEY' }],
+      })
+      expect(health.sources.map((s) => s.source)).toEqual([
+        'amc',
+        'cinemark',
+        'resolve',
+        'seattle-magic',
+        'siff',
+      ])
+      expect(health.sources.find((s) => s.source === 'resolve')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: TMDB_API_KEY is not set',
+        lastRunAt: null,
+        lastStatus: null,
+        itemCount: null,
+      })
+    } finally {
+      close()
+    }
+  })
+
   it('keeps a known source listed even when the caller does not name it', async () => {
     // The reverse hazard. If AMC_API_KEY goes missing the adapter is not
     // built, and a report that only listed the live adapters would quietly

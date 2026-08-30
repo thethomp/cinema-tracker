@@ -32,6 +32,22 @@ export interface RawScreening {
   runtimeMinutes?: number
 }
 
+/**
+ * An integration that cannot run because its configuration is absent.
+ *
+ * Named rather than omitted. `createAdapters` drops the AMC adapter without a
+ * vendor key and the resolve pass is skipped without a TMDB token -- both the
+ * right thing to do, and both silent, which is how two of the owner's venues
+ * went a week without being swept while the health view stayed green. This is
+ * the shape those omissions travel in so the report can print them.
+ */
+export interface UnconfiguredSource {
+  /** The source or pass id, as the health report lists it. */
+  source: string
+  /** The environment variable whose absence stops it, e.g. "AMC_API_KEY". */
+  variable: string
+}
+
 export interface VenueAdapter {
   readonly id: string
   readonly venues: VenueRef[]

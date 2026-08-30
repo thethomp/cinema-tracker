@@ -14,7 +14,13 @@ import { desc, eq } from 'drizzle-orm'
 import { createDatabase, type Db } from '../db/client.js'
 import { appState, sourceRuns } from '../db/schema.js'
 import { createScheduler } from '../schedule/scheduler.js'
-import { configuredSourceIds, resolvePass, scorePass, sweepPass } from '../pipeline/passes.js'
+import {
+  configuredSourceIds,
+  resolvePass,
+  scorePass,
+  sweepPass,
+  unconfiguredIntegrations,
+} from '../pipeline/passes.js'
 import { createApp } from './app.js'
 
 const DEFAULT_PORT = 8787
@@ -91,7 +97,9 @@ export async function runPipeline(db: Db, config: PipelineConfig): Promise<void>
       )
     } else {
       // Loud, and then carry on. Scoring stale film data still beats a server
-      // that refuses to sweep because one key is missing.
+      // that refuses to sweep because one key is missing. The console is only
+      // half of it: `unconfiguredIntegrations` puts the same fact in the
+      // health report, where the owner will actually see it.
       console.warn('  resolve: skipped — TMDB_API_KEY is not set')
     }
 
@@ -134,7 +142,22 @@ export async function startServer(options: ServeOptions = {}): Promise<void> {
     console.warn(`No built UI at ${indexPath}. Run 'npm run web:build'. The API still serves.`)
   }
 
-  const api = createApp(db, { sources: configuredSourceIds(config) })
+  /*
+   * What this process can and cannot do, told to the API together.
+   *
+   * A key that is absent used to disappear twice over: `createAdapters`
+   * omitted the AMC adapter without a word, and the resolve pass warned to a
+   * console nobody watches. Neither reached the health view. Both are startup
+   * facts, so they are computed once here and reported for the life of the
+   * process -- unhealthy, named, and not fatal. The server still starts and
+   * still sweeps what it can.
+   */
+  const unconfigured = unconfiguredIntegrations(config)
+  for (const entry of unconfigured) {
+    console.warn(`Not configured: ${entry.variable} is not set — ${entry.source} will not run.`)
+  }
+
+  const api = createApp(db, { sources: configuredSourceIds(config), unconfigured })
   const app = new Hono()
 
   // The whole /api namespace is handed to the API app rather than merged into

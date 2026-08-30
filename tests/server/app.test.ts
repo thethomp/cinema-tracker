@@ -264,6 +264,39 @@ describe('GET /api/health', () => {
       close()
     }
   })
+
+  it('carries an unconfigured integration through to the JSON the UI reads', async () => {
+    // The whole point of the plumbing: a missing key has to arrive at the
+    // browser as an entry, not as an absence. `serve.ts` computes this from
+    // the same config it builds the adapters from.
+    const { db, close } = await emptyDb()
+    const app = createApp(db, {
+      now,
+      sources: ['siff'],
+      unconfigured: [
+        { source: 'amc', variable: 'AMC_API_KEY' },
+        { source: 'resolve', variable: 'TMDB_API_KEY' },
+      ],
+    })
+    try {
+      const res = await app.request('/api/health')
+      const body = await res.json()
+      const byName = new Map(
+        body.sources.map((s: { source: string }) => [s.source, s] as const),
+      )
+      expect(byName.get('amc')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: AMC_API_KEY is not set',
+      })
+      expect(byName.get('resolve')).toMatchObject({
+        healthy: false,
+        reason: 'not configured: TMDB_API_KEY is not set',
+      })
+      expect(body.healthy).toBe(false)
+    } finally {
+      close()
+    }
+  })
 })
 
 describe('POST /api/visit', () => {

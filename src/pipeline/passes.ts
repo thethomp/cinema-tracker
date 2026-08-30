@@ -9,7 +9,8 @@
  */
 import { DateTime } from 'luxon'
 import type { Db } from '../db/client.js'
-import { createAdapters, allVenues } from '../adapters/index.js'
+import type { UnconfiguredSource } from '../core/types.js'
+import { createAdapters, allVenues, unconfiguredAdapters } from '../adapters/index.js'
 import { seedTasteRules, seedVenues } from '../db/seed.js'
 import { Fetcher } from '../fetch/fetcher.js'
 import { runSweep } from '../sweep/sweep.js'
@@ -42,6 +43,31 @@ export function configuredSourceIds(config: AdapterConfig = {}): string[] {
   return createAdapters(new Fetcher(), config).map((adapter) => adapter.id)
 }
 
+export interface PassConfig extends AdapterConfig {
+  tmdbApiKey?: string
+}
+
+/**
+ * Every integration this process is configured *not* to run, and why.
+ *
+ * Both halves were previously silent. Without `AMC_API_KEY` the AMC adapter is
+ * never built, so it records no run and leaves no trace; without
+ * `TMDB_API_KEY` the resolve pass is skipped with a `console.warn` in a server
+ * log nobody reads. The owner ran `npm run serve` for a week in exactly that
+ * state: two venues unswept, `films.fetched_at` frozen, 73 screenings of one
+ * title unlinked, and a health view showing green throughout.
+ *
+ * `resolve` is not a swept source and writes no `source_runs` rows, so it
+ * appears in the health report *only* when it cannot run. Listing it always
+ * would mean listing it as "never run" forever.
+ */
+export function unconfiguredIntegrations(config: PassConfig = {}): UnconfiguredSource[] {
+  return [
+    ...unconfiguredAdapters(config),
+    ...(config.tmdbApiKey ? [] : [{ source: 'resolve', variable: 'TMDB_API_KEY' }]),
+  ]
+}
+
 export interface SweepPassOptions extends AdapterConfig {
   now?: Date
   windowDays?: number
@@ -67,7 +93,16 @@ export async function sweepPass(db: Db, options: SweepPassOptions = {}): Promise
   }
 
   const results = await runSweep(db, adapters, range, now)
-  const health = await evaluateHealth(db, adapters.map((adapter) => adapter.id), { now })
+  // Adapters that were not built are appended rather than dropped: a source
+  // this sweep could not even attempt is exactly what the caller needs told.
+  const health = [
+    ...(await evaluateHealth(db, adapters.map((adapter) => adapter.id), { now })),
+    ...unconfiguredAdapters({ amcApiKey: options.amcApiKey }).map((entry) => ({
+      source: entry.source,
+      healthy: false,
+      reason: `not configured: ${entry.variable} is not set`,
+    })),
+  ]
 
   return { range, results, health }
 }
