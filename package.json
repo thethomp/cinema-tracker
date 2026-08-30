@@ -8,11 +8,16 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
     "sweep": "tsx src/cli.ts sweep",
     "resolve": "tsx src/cli.ts resolve",
     "score": "tsx src/cli.ts score",
-    "sync": "tsx src/cli.ts sync"
+    "sync": "tsx src/cli.ts sync",
+    "web:dev": "vite",
+    "web:build": "vite build",
+    "web:preview": "vite preview",
+    "dev:api": "tsx scripts/dev-api.ts",
+    "serve": "npm run web:build && tsx src/cli.ts serve"
   },
   "repository": {
     "type": "git",
@@ -31,15 +36,23 @@
     "better-sqlite3": "^13.0.3",
     "cheerio": "^1.2.0",
     "drizzle-orm": "^0.45.2",
-    "luxon": "^3.7.2"
+    "hono": "^4.13.3",
+    "luxon": "^3.7.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@hono/node-server": "^2.1.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/luxon": "^3.7.4",
     "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.10"
   }
 }

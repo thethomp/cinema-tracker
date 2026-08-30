@@ -1,0 +1,180 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..700;1,400..700&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  line-height: 1.45;
+  /* The page is a printed sheet, not a screen. Keep the rendering warm and
+     let hairlines stay hairlines. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Grain.
+ *
+ * This is the single thing that makes the page read as paper rather than as a
+ * beige web page. Fixed, so it does not scroll with the content -- grain that
+ * moves reads as a texture *on* the content instead of the sheet it is printed
+ * on. Desaturated, because coloured noise on warm paper turns pink.
+ */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.062;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+/* ---- type scale --------------------------------------------------------- */
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+figure {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 400;
+}
+
+.serif {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/*
+ * The workhorse. Every metadata heading, chip, venue name and column head in
+ * the programme is one of these -- small, wide-tracked, uppercase, muted.
+ */
+.label {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-muted);
+}
+
+.rule {
+  border: 0;
+  border-top: var(--rule);
+  margin: 0;
+}
+
+/* ---- links -------------------------------------------------------------- */
+
+a {
+  color: inherit;
+}
+
+/*
+ * A showtime is a link to a ticket page. It is set as a printed time with an
+ * underline that becomes a vermilion block on hover -- the one place the
+ * accent is allowed outside a format stamp, because it is transient and
+ * pointer-driven rather than a standing mark on the page.
+ */
+.showtime {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  color: var(--ink);
+  padding: 1px 4px;
+  border-bottom: 1px solid var(--ink-soft);
+  transition:
+    background-color 90ms ease-out,
+    color 90ms ease-out,
+    border-color 90ms ease-out;
+  white-space: nowrap;
+}
+
+.showtime:hover,
+.showtime:focus-visible {
+  background: var(--accent);
+  border-bottom-color: var(--accent-sunk);
+  color: var(--paper);
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---- layout ------------------------------------------------------------- */
+
+.sheet {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 6rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- motion ------------------------------------------------------------- */
+
+/*
+ * One gesture, on load: entries rise a few pixels and ink in, stepped by index.
+ * Nothing else animates. A programme does not move.
+ */
+@keyframes ink-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ink-in {
+  animation: ink-in 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-in {
+    animation: none;
+  }
+  * {
+    transition-duration: 1ms !important;
+  }
+}

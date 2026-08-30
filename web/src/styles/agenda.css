@@ -1,0 +1,246 @@
+/* ---- filter strip -------------------------------------------------------- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.75rem;
+  padding: 0.85rem 0 0.9rem;
+  border-top: var(--rule-heavy);
+  border-bottom: var(--rule);
+}
+
+.filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/*
+ * A native select, dressed as a ruled field: no border box, a single hairline
+ * underneath, and the caret drawn as a small ink triangle. The platform keeps
+ * the keyboard behaviour; the page keeps looking printed.
+ */
+.filters__select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ink-soft);
+  border-radius: 0;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  padding: 2px 1.4rem 3px 0;
+  /* Bounded, and ellipsised: left to size itself, the venue select is as wide
+     as "Cinemark Lincoln Square Cinemas and IMAX" and pushes the rest of the
+     strip onto a second line. */
+  min-width: 9rem;
+  max-width: 13rem;
+  text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M0 0h9L4.5 6z' fill='%23151310'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  cursor: pointer;
+}
+
+.filters__select:hover {
+  border-bottom-color: var(--ink);
+}
+
+.filters__check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  padding-bottom: 3px;
+}
+
+.filters__check input {
+  accent-color: var(--ink);
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0;
+}
+
+.filters__count {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--ink);
+  padding-bottom: 2px;
+}
+
+.filters__count-unit {
+  margin-left: 0.4rem;
+}
+
+.filters__clear {
+  background: none;
+  border: 1px solid var(--ink-soft);
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--ink-muted);
+}
+
+.filters__clear:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* ---- a day --------------------------------------------------------------- */
+
+.daygroup {
+  display: grid;
+  grid-template-columns: var(--margin-col) 1fr;
+  column-gap: var(--margin-gap);
+  border-bottom: var(--rule);
+  padding: 1rem 0 1.1rem;
+}
+
+.daygroup__date {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  text-align: right;
+  line-height: 1;
+}
+
+.daygroup__weekday,
+.daygroup__month {
+  display: block;
+  font-size: 0.625rem;
+}
+
+.daygroup__numeral {
+  display: block;
+  font-size: 2.35rem;
+  line-height: 1;
+  margin: 0.15rem 0 0.2rem;
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.daygroup--today .daygroup__numeral {
+  /* Today is heavier ink, not a different colour. */
+  font-weight: 600;
+}
+
+.daygroup__today {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.5625rem;
+  color: var(--gold);
+}
+
+.daygroup__films {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/*
+ * One screening line. Alternating grounds at low opacity so a long Saturday
+ * stays trackable across the gutter without drawing rules between every row.
+ */
+.agenda-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 19rem);
+  column-gap: 1.25rem;
+  align-items: baseline;
+  padding: 0.32rem 0.45rem;
+}
+
+.agenda-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--paper-sunk) 60%, transparent);
+}
+
+.agenda-row__what {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.5rem;
+}
+
+.agenda-row__title {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 1.0625rem;
+  line-height: 1.25;
+}
+
+.agenda-row__venue {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  min-width: 0;
+}
+
+.agenda-row__tags {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.6875rem;
+}
+
+.agenda-row__times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.3rem;
+  justify-content: flex-start;
+}
+
+/* The agenda's stamps sit inline in a dense row, so they lose the rotation --
+   tilted type inside a 0.32rem line reads as a rendering fault, not a stamp. */
+.agenda-row .stamp {
+  transform: none;
+  font-size: 0.625rem;
+  padding: 1px 5px;
+}
+
+/* ---- phone --------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  /* The margin column collapses into a full-width date header. */
+  .daygroup {
+    grid-template-columns: 1fr;
+    padding: 0.75rem 0 0.9rem;
+  }
+
+  .daygroup__date {
+    position: static;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.35rem;
+    border-bottom: var(--rule);
+  }
+
+  .daygroup__numeral {
+    font-size: 1.5rem;
+    margin: 0;
+  }
+
+  .daygroup__today {
+    margin-top: 0;
+    margin-left: auto;
+  }
+
+  .agenda-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.2rem;
+    padding: 0.5rem 0.45rem;
+  }
+
+  .filters {
+    gap: 0.75rem 1.25rem;
+  }
+
+  .filters__select {
+    min-width: 9rem;
+  }
+
+  .filters__count {
+    margin-left: 0;
+  }
+}

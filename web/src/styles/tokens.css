@@ -1,0 +1,36 @@
+/*
+ * The programme's palette and measure.
+ *
+ * Two rules govern everything downstream:
+ *
+ *   1. --accent (vermilion) marks special formats and nothing else. 70MM,
+ *      35MM, LIVE_SCORE, Q_AND_A. The moment a heading or a hover state or a
+ *      "new" badge borrows it, a 35mm print stops being findable by eye.
+ *   2. Rules are hairlines. --ink-soft is an alpha so a rule sits *on* the
+ *      paper rather than painting a grey band over it.
+ */
+:root {
+  --paper: #f4f1ea;
+  --paper-sunk: #ebe7dd;
+  --ink: #151310;
+  --ink-soft: #55504733;
+  --ink-muted: #574F42;
+  --accent: #d6482b;
+  --accent-sunk: #a8351c;
+  --gold: #9a7b3f;
+
+  --serif: 'Bodoni Moda', 'Didot', 'Bodoni MT', Georgia, serif;
+  --sans: 'Archivo', 'Helvetica Neue', Helvetica, sans-serif;
+  --mono: 'IBM Plex Mono', 'SFMono-Regular', 'Courier New', monospace;
+
+  /* The printed page. Wider than a blog, narrower than a dashboard. */
+  --measure: 54rem;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+
+  /* Left margin column: rank numerals in the feed, dates in the agenda. */
+  --margin-col: 4.5rem;
+  --margin-gap: 1.5rem;
+
+  --rule: 1px solid var(--ink-soft);
+  --rule-heavy: 2px solid var(--ink);
+}

@@ -1,45 +1,26 @@
-import { DateTime } from 'luxon'
 import { createDatabase } from './db/client.js'
-import { seedTasteRules, seedVenues } from './db/seed.js'
-import { createAdapters, allVenues } from './adapters/index.js'
 import { Fetcher } from './fetch/fetcher.js'
-import { runSweep } from './sweep/sweep.js'
-import { evaluateHealth } from './store/runs.js'
-import { TmdbClient } from './tmdb/client.js'
-import { runResolution } from './resolve/run.js'
-import { backfillDiaryTmdbIds, enrichWatchedFilms } from './taste/enrich.js'
+import { resolvePass, scorePass, sweepPass } from './pipeline/passes.js'
 import { syncLetterboxd } from './letterboxd/sync.js'
-import { RuleTagExtractor } from './tags/extract.js'
-import { runScoring } from './score/run.js'
+import { startServer } from './server/serve.js'
 import { HIGHLIGHT_THRESHOLD } from './score/score.js'
 
 const DB_PATH = process.env.DATABASE_PATH ?? 'data/cinema-tracker.db'
 const LETTERBOXD_CSV_DIR = process.env.LETTERBOXD_CSV_DIR ?? 'data/letterboxd'
-const FETCH_WINDOW_DAYS = 21
-const TZ = 'America/Los_Angeles'
 
 async function sweep(): Promise<void> {
   const { db, close } = createDatabase(DB_PATH)
   try {
-    const fetcher = new Fetcher()
-    const adapters = createAdapters(fetcher, { amcApiKey: process.env.AMC_API_KEY })
-    await seedVenues(db, allVenues(adapters))
+    const { range, results, health } = await sweepPass(db, {
+      ...(process.env.AMC_API_KEY ? { amcApiKey: process.env.AMC_API_KEY } : {}),
+    })
 
-    const today = DateTime.now().setZone(TZ)
-    const range = {
-      from: today.toISODate()!,
-      to: today.plus({ days: FETCH_WINDOW_DAYS }).toISODate()!,
-    }
-
-    console.log(`Sweeping ${range.from} → ${range.to}`)
-    const results = await runSweep(db, adapters, range, new Date())
-
+    console.log(`Sweeping ${range.from} \u2192 ${range.to}`)
     for (const result of results) {
       const detail = result.status === 'ok' ? `${result.itemCount} screenings` : result.error
-      console.log(`  ${result.source}: ${result.status} — ${detail}`)
+      console.log(`  ${result.source}: ${result.status} \u2014 ${detail}`)
     }
 
-    const health = await evaluateHealth(db, adapters.map((a) => a.id))
     const unhealthy = health.filter((h) => !h.healthy)
     if (unhealthy.length > 0) {
       console.log('\nUnhealthy sources:')
@@ -54,44 +35,37 @@ async function sweep(): Promise<void> {
 async function resolve(): Promise<void> {
   const apiKey = process.env.TMDB_API_KEY
   if (!apiKey) {
-    console.error('TMDB_API_KEY is not set. Add it to .env — https://www.themoviedb.org/settings/api')
+    console.error('TMDB_API_KEY is not set. Add it to .env \u2014 https://www.themoviedb.org/settings/api')
     process.exitCode = 1
     return
   }
 
   const { db, close } = createDatabase(DB_PATH)
   try {
-    const client = new TmdbClient(new Fetcher({ minIntervalMs: 300 }), apiKey)
-    const summary = await runResolution(db, client, new Date())
+    const { resolution, backfill, enrichment } = await resolvePass(db, apiKey)
 
-    console.log(`Resolved ${summary.resolved} titles, linked ${summary.screeningsLinked} screenings`)
+    console.log(
+      `Resolved ${resolution.resolved} titles, linked ${resolution.screeningsLinked} screenings`,
+    )
 
-    if (summary.unresolved.length > 0) {
-      console.log(`\n${summary.unresolved.length} unresolved:`)
-      for (const entry of summary.unresolved) {
+    if (resolution.unresolved.length > 0) {
+      console.log(`\n${resolution.unresolved.length} unresolved:`)
+      for (const entry of resolution.unresolved) {
         console.log(`  ${entry.rawTitle} (${entry.screeningCount} screenings)`)
       }
       console.log('\nAdd a row to title_overrides to resolve one by hand.')
     }
 
-    // The taste model reads `films`, which the pass above fills only with
-    // titles currently on sale. Without this the owner's diary joins to a
-    // dozen rows and every affinity falls under the sample floor.
-    // A CSV export carries the full rating history but no TMDB ids, so give
-    // those entries ids before fetching metadata for them.
-    const backfilled = await backfillDiaryTmdbIds(db, client, new Date())
-    if (backfilled.resolved > 0 || backfilled.unresolved.length > 0) {
+    if (backfill.resolved > 0 || backfill.unresolved.length > 0) {
       console.log(
-        `\nDiary backfill: matched ${backfilled.resolved}, ` +
-          `unmatched ${backfilled.unresolved.length}`,
+        `\nDiary backfill: matched ${backfill.resolved}, unmatched ${backfill.unresolved.length}`,
       )
     }
 
-    const enriched = await enrichWatchedFilms(db, client, new Date())
     console.log(
-      `\nWatched-film metadata: fetched ${enriched.fetched}, already held ${enriched.skipped}`,
+      `\nWatched-film metadata: fetched ${enrichment.fetched}, already held ${enrichment.skipped}`,
     )
-    for (const failure of enriched.failed) {
+    for (const failure of enrichment.failed) {
       console.log(`  tmdb ${failure.tmdbId}: ${failure.error}`)
     }
   } finally {
@@ -104,9 +78,7 @@ const TOP_HIGHLIGHTS = 20
 async function scoreCommand(): Promise<void> {
   const { db, close } = createDatabase(DB_PATH)
   try {
-    await seedTasteRules(db)
-
-    const summary = await runScoring(db, new RuleTagExtractor(), new Date())
+    const summary = await scorePass(db)
 
     console.log(
       `Scored ${summary.scored} future screenings; ${summary.highlights} at or above ${HIGHLIGHT_THRESHOLD}.`,
@@ -183,7 +155,13 @@ if (command === 'sweep') {
   await scoreCommand()
 } else if (command === 'sync') {
   await sync()
+} else if (command === 'serve') {
+  // No `close()` here: the server owns the database for the life of the
+  // process and shuts it down on SIGINT.
+  // `--no-sweep` is for working on the UI: the same server, without the passes
+  // running underneath and rewriting the rows being looked at.
+  await startServer({ schedule: !process.argv.includes('--no-sweep') })
 } else {
-  console.error('Usage: cli.ts <sweep|resolve|sync|score>')
+  console.error('Usage: cli.ts <sweep|resolve|sync|score|serve [--no-sweep]>')
   process.exit(1)
 }
